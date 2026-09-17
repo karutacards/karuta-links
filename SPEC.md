@@ -23,10 +23,11 @@ krta.cc stores official Karuta dumps that do not present well in Discord. The fi
 | `/content/{id}` | Canonical dump. `{id}` is a positive integer with no leading zeros |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
+| `/images/…` | Character image from `karuta-images`, CloudFront fallback on miss |
 | `/health` | Plain `ok` |
 | `/robots.txt` | Allow all |
 
-Reserved first segments: `api`, `assets`, `content`, `favicon.ico`, `health`, `robots.txt`, `static`. Those names never become slugs.
+Reserved first segments: `api`, `assets`, `content`, `favicon.ico`, `health`, `images`, `robots.txt`, `static`. Those names never become slugs.
 
 Slugs are exactly six characters in `[a-z0-9]`. They point only at internal `/{section}/{id}` paths. There are no open redirects.
 
@@ -36,12 +37,12 @@ Unknown sections return 404.
 
 ## Content dumps
 
-A dump is an immutable snapshot. Ingest builds unsigned HTTPS card URLs with the same path rules as Karuta's `Util.getCharacterImage`:
+A dump is an immutable snapshot. Ingest stores same-origin image URLs. Those paths name character images (unframed edition art), not framed cards:
 
-- Version `0` or omitted: `{cdn}/cards/{key}-{edition}.jpg`
-- Version greater than `0`: `{cdn}/cards/versioned/{key}-{edition}-{version}.jpg`
+- Version `0` or omitted: `/images/cards/{key}-{edition}.jpg`
+- Version greater than `0`: `/images/cards/versioned/{key}-{edition}-{version}.jpg`
 
-The CDN base is `https://d2l56h9h5tj8ue.cloudfront.net/images`.
+Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. A miss fetches Karuta's uncached host `d29rfjkp84y49u.cloudfront.net` and stores the full JPEG. The Worker does not build thumbs.
 
 Public HTML shows names, series, editions and images. It does not scrape live production data.
 
@@ -75,4 +76,4 @@ Pages are public. Writes require the ingest token. Soft and silent Karuta publis
 - Custom domain attachment
 - Historical backfill
 - Accounts
-- R2 image mirrors
+- A public hostname on `karuta-images` (`img.krta.cc` is optional later)

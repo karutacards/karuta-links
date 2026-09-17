@@ -15,5 +15,11 @@
       "database_id": "41793a0f-0869-49a2-93f4-be7f0538c852",
       "migrations_dir": "migrations"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "karuta-images"
+    }
   ]
 }

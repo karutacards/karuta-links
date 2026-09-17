@@ -3,6 +3,7 @@ import { bearerToken, tokensMatch } from './auth'
 import { getDocument, insertContentDump, listRecentContent, resolveSlug } from './db'
 import { renderContentDump, renderHome, renderNotFound } from './html'
 import { IngestError, MAX_INGEST_BYTES, parseContentSnapshot } from './ingest'
+import { ensureSnapshotImages, serveKeyedImage } from './images'
 import { CONTENT_SECTION } from './types'
 
 export const app = new Hono<{ Bindings: Env }>()
@@ -66,6 +67,9 @@ app.post('/api/v1/content', async (c) => {
   try {
     const snapshot = parseContentSnapshot(body)
     const created = await insertContentDump(c.env.DB, snapshot)
+    if (c.env.IMAGES) {
+      c.executionCtx.waitUntil(ensureSnapshotImages(c.env.IMAGES, snapshot))
+    }
     const path = `/content/${created.id}`
     const shortPath = `/${created.slug}`
     return json({
@@ -83,6 +87,14 @@ app.post('/api/v1/content', async (c) => {
     }
     throw error
   }
+})
+
+app.get('/images/*', async (c) => {
+  const objectKey = new URL(c.req.url).pathname.replace(/^\/images\//, '')
+  if (!c.env.IMAGES) {
+    return new Response('Not found', { status: 404 })
+  }
+  return serveKeyedImage(c.env.IMAGES, objectKey)
 })
 
 app.get('/content/:id', async (c) => {

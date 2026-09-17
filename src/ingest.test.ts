@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { IngestError, parseContentSnapshot } from './ingest'
-import { CARD_CDN_BASE } from './images'
+import { cardImageUrl } from './images'
 
 describe('parseContentSnapshot', () => {
   it('builds image URLs and fills series names from the same payload', () => {
@@ -23,10 +23,10 @@ describe('parseContentSnapshot', () => {
     expect(snapshot.environment).toBe('development')
     expect(snapshot.newCharacters[0]?.seriesName).toBe('Jujutsu Kaisen')
     expect(snapshot.newEditions[0]?.editions[0]?.imageUrl).toBe(
-      `${CARD_CDN_BASE}/cards/gojo-satoru-1.jpg`
+      cardImageUrl('gojo-satoru', '1', 0)
     )
     expect(snapshot.newEditions[0]?.editions[1]?.imageUrl).toBe(
-      `${CARD_CDN_BASE}/cards/versioned/gojo-satoru-2-1.jpg`
+      cardImageUrl('gojo-satoru', '2', 1)
     )
   })
 

@@ -9,7 +9,8 @@ Production names are `karuta-links` for the Worker and the D1 database. `wrangle
 3. Put the returned `database_id` into `wrangler.jsonc`.
 4. Apply migrations: `pnpm run db:migrate:remote`.
 5. Set the ingest secret: `pnpm exec wrangler secret put INGEST_TOKEN`.
-6. Deploy: `pnpm run deploy`.
+6. Confirm `wrangler.jsonc` binds R2 `karuta-images` as `IMAGES`.
+7. Deploy: `pnpm run deploy`.
 
 Do not pass the secret value on the command line.
 

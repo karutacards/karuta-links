@@ -17,7 +17,7 @@ karuta.today is a static Pages site. That model cannot accept writes. karuta.car
 
 Tables: `sequences`, `documents`, `slugs`. A content dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`.
 
-Images are not stored here. Ingest writes official CloudFront URLs onto the snapshot.
+Dump HTML uses same-origin `/images/…` paths. The Worker reads private R2 `karuta-images` and falls back to Karuta's uncached CloudFront host on a miss. Ingest `waitUntil`s a full-image PUT for each dump edition. Thumbs are not written here.
 
 ## Auth
 
