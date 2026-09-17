@@ -1,0 +1,78 @@
+import { isReservedSegment } from './reserved'
+import { isSlug } from './slug'
+import type { Route } from './types'
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled route: ${JSON.stringify(value)}`)
+}
+
+export function parsePositiveInt(value: string): number | null {
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    return null
+  }
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed)) {
+    return null
+  }
+  return parsed
+}
+
+export function classifyPath(pathname: string): Route {
+  const path = pathname === '/' ? '/' : pathname.replace(/\/+$/, '') || '/'
+  if (path === '/') {
+    return { type: 'home' }
+  }
+  if (path === '/health') {
+    return { type: 'health' }
+  }
+  if (path === '/robots.txt') {
+    return { type: 'robots' }
+  }
+  if (path === '/api/v1/content') {
+    return { type: 'ingest' }
+  }
+
+  const segments = path.slice(1).split('/')
+  if (segments.length === 2) {
+    const [section, rawId] = segments
+    if (!section || section !== 'content') {
+      return { type: 'notFound' }
+    }
+    const id = rawId ? parsePositiveInt(rawId) : null
+    if (id === null) {
+      return { type: 'notFound' }
+    }
+    return { type: 'document', section, id }
+  }
+
+  if (segments.length === 1) {
+    const [slug] = segments
+    if (!slug || isReservedSegment(slug) || !isSlug(slug)) {
+      return { type: 'notFound' }
+    }
+    return { type: 'slug', slug }
+  }
+
+  return { type: 'notFound' }
+}
+
+export function describeRoute(route: Route): string {
+  switch (route.type) {
+    case 'home':
+      return 'home'
+    case 'health':
+      return 'health'
+    case 'robots':
+      return 'robots'
+    case 'ingest':
+      return 'ingest'
+    case 'document':
+      return `${route.section}/${route.id}`
+    case 'slug':
+      return route.slug
+    case 'notFound':
+      return 'notFound'
+    default:
+      return assertNever(route)
+  }
+}

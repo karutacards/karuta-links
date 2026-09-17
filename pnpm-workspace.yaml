@@ -1,0 +1,7 @@
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+packages:
+  - .

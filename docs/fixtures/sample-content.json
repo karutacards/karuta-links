@@ -1,0 +1,36 @@
+{
+  "environment": "development",
+  "newSeries": [
+    {
+      "key": "jujutsu-kaisen",
+      "name": "Jujutsu Kaisen"
+    },
+    {
+      "key": "demon-slayer",
+      "name": "Demon Slayer: Kimetsu no Yaiba"
+    }
+  ],
+  "updatedSeries": [],
+  "newCharacters": [
+    {
+      "key": "gojo-satoru",
+      "name": "Gojo Satoru",
+      "series": "jujutsu-kaisen"
+    }
+  ],
+  "newEditions": [
+    {
+      "key": "gojo-satoru",
+      "name": "Gojo Satoru",
+      "series": "jujutsu-kaisen",
+      "editions": ["1", "2"]
+    },
+    {
+      "key": "nezuko-kamado",
+      "name": "Nezuko Kamado",
+      "series": "demon-slayer",
+      "editions": [{ "edition": "2", "version": 1 }]
+    }
+  ],
+  "updatedEditions": []
+}

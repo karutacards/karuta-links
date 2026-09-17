@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+.git/
+.specstory/
+.cursor/
+.backups/
+.tmp/
+.assets/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+*.md
+!README.md
