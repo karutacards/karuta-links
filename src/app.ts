@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { bearerToken, tokensMatch } from './auth'
-import { getDocument, insertContentDump, listRecentContent, resolveSlug } from './db'
-import { renderContentDump, renderHome, renderNotFound } from './html'
+import { getContestDocument, getDocument, insertContentDump, listRecentContests, listRecentContent, resolveSlug } from './db'
+import { renderContentDump, renderContestDump, renderContestHome, renderHome, renderNotFound } from './html'
 import { IngestError, MAX_INGEST_BYTES, parseContentSnapshot } from './ingest'
 import { ensureSnapshotImages, serveKeyedImage } from './images'
 import { CONTENT_SECTION } from './types'
@@ -95,6 +95,24 @@ app.get('/images/*', async (c) => {
     return new Response('Not found', { status: 404 })
   }
   return serveKeyedImage(c.env.IMAGES, objectKey)
+})
+
+app.get('/contests', async (c) => {
+  const dumps = await listRecentContests(c.env.DB)
+  return html(renderContestHome(dumps))
+})
+
+app.get('/contests/:id', async (c) => {
+  const rawId = c.req.param('id')
+  const id = /^[1-9][0-9]*$/.test(rawId) ? Number(rawId) : NaN
+  if (!Number.isSafeInteger(id)) {
+    return html(renderNotFound(), 404)
+  }
+  const document = await getContestDocument(c.env.DB, id)
+  if (!document) {
+    return html(renderNotFound(), 404)
+  }
+  return html(renderContestDump(id, document.createdAt, document.snapshot, document.slug))
 })
 
 app.get('/content/:id', async (c) => {

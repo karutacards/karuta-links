@@ -1,5 +1,15 @@
 import { generateSlug } from './slug'
-import { CONTENT_KIND, CONTENT_SECTION, type ContentSnapshot, type ListedDump } from './types'
+import {
+  CARD_HUNT_NAME,
+  CONTEST_KIND,
+  CONTEST_SECTION,
+  CONTENT_KIND,
+  CONTENT_SECTION,
+  type ContentSnapshot,
+  type ContestSnapshot,
+  type ListedContest,
+  type ListedDump
+} from './types'
 
 export async function allocateId(db: D1Database, section: string): Promise<number> {
   const row = await db
@@ -47,6 +57,118 @@ export async function insertContentDump(
   }
 
   throw new Error('Failed to allocate a unique slug')
+}
+
+export async function insertContestDump(
+  db: D1Database,
+  snapshot: ContestSnapshot,
+  createdAt = Date.now()
+): Promise<{ id: number; slug: string } | null> {
+  const existing = await db
+    .prepare(
+      `SELECT document_id FROM contest_dumps
+       WHERE contest_name = ? AND event_counter = ?`
+    )
+    .bind(snapshot.contestName, snapshot.eventCounter)
+    .first<{ document_id: number }>()
+  if (existing) {
+    return null
+  }
+
+  const id = await allocateId(db, CONTEST_SECTION)
+  const payload = JSON.stringify(snapshot)
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const slug = generateSlug()
+    try {
+      await db.batch([
+        db.prepare(
+          `INSERT INTO documents (section, id, created_at, kind, payload)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(CONTEST_SECTION, id, createdAt, CONTEST_KIND, payload),
+        db.prepare(
+          `INSERT INTO slugs (slug, section, id) VALUES (?, ?, ?)`
+        ).bind(slug, CONTEST_SECTION, id),
+        db.prepare(
+          `INSERT INTO contest_dumps (contest_name, event_counter, document_id)
+           VALUES (?, ?, ?)`
+        ).bind(snapshot.contestName, snapshot.eventCounter, id)
+      ])
+      return { id, slug }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/contest_dumps/i.test(message) && /UNIQUE/i.test(message)) {
+        return null
+      }
+      if (!/UNIQUE/i.test(message) || attempt === 7) {
+        throw error
+      }
+    }
+  }
+
+  throw new Error('Failed to allocate a unique slug')
+}
+
+export async function lastDumpedEvent(
+  db: D1Database,
+  contestName = CARD_HUNT_NAME
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT MAX(event_counter) AS event_counter
+       FROM contest_dumps
+       WHERE contest_name = ?`
+    )
+    .bind(contestName)
+    .first<{ event_counter: number | null }>()
+  return row?.event_counter ?? 0
+}
+
+export async function getContestDocument(
+  db: D1Database,
+  id: number
+): Promise<{ createdAt: number; snapshot: ContestSnapshot; slug: string | null } | null> {
+  const document = await db
+    .prepare(
+      `SELECT documents.created_at AS created_at, documents.payload AS payload, slugs.slug AS slug
+       FROM documents
+       LEFT JOIN slugs ON slugs.section = documents.section AND slugs.id = documents.id
+       WHERE documents.section = ? AND documents.id = ?`
+    )
+    .bind(CONTEST_SECTION, id)
+    .first<{ created_at: number; payload: string; slug: string | null }>()
+
+  if (!document) {
+    return null
+  }
+
+  return {
+    createdAt: document.created_at,
+    snapshot: JSON.parse(document.payload) as ContestSnapshot,
+    slug: document.slug
+  }
+}
+
+export async function listRecentContests(db: D1Database, limit = 50): Promise<ListedContest[]> {
+  const rows = await db
+    .prepare(
+      `SELECT documents.id AS id, documents.created_at AS created_at, documents.payload AS payload,
+              slugs.slug AS slug
+       FROM documents
+       LEFT JOIN slugs ON slugs.section = documents.section AND slugs.id = documents.id
+       WHERE documents.section = ?
+       ORDER BY documents.id DESC
+       LIMIT ?`
+    )
+    .bind(CONTEST_SECTION, limit)
+    .all<{ id: number; created_at: number; payload: string; slug: string | null }>()
+
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    slug: row.slug,
+    snapshot: JSON.parse(row.payload) as ContestSnapshot
+  }))
 }
 
 export async function getDocument(

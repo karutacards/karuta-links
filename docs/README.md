@@ -9,6 +9,7 @@
 | [runbooks/deploy.md](runbooks/deploy.md) | Deploy and secrets |
 | [fixtures/sample-content.json](fixtures/sample-content.json) | Curl ingest fixture |
 | [handoff/karuta-admin-ingest.md](handoff/karuta-admin-ingest.md) | Later Admin POST contract |
-| [handoff/discordcards.md](handoff/discordcards.md) | Bot: no required change |
+| [handoff/discordcards.md](handoff/discordcards.md) | Bot handoff index |
+| [handoff/discordcards-contest-dump.md](handoff/discordcards-contest-dump.md) | Card Hunt poll recipe |
 
 [SPEC.md](../SPEC.md) is the product source of truth.

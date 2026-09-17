@@ -4,7 +4,7 @@ This file is the source of truth for implemented behavior. If code and prose dis
 
 ## Purpose
 
-krta.cc stores official Karuta dumps that do not present well in Discord. The first section is incrementally ID'd content dumps of published series, characters and editions, with card images.
+krta.cc stores official Karuta dumps that do not present well in Discord. Sections are incrementally ID'd content dumps and Card Hunt contest results.
 
 ## Names
 
@@ -20,18 +20,20 @@ krta.cc stores official Karuta dumps that do not present well in Discord. The fi
 | Path | Behavior |
 | --- | --- |
 | `/` | Recent content dumps, newest first |
-| `/content/{id}` | Canonical dump. `{id}` is a positive integer with no leading zeros |
+| `/content/{id}` | Canonical content dump. `{id}` is a positive integer with no leading zeros |
+| `/contests` | Recent Card Hunt dumps, newest first |
+| `/contests/{id}` | Canonical contest dump. `{id}` is a positive integer with no leading zeros |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
-| `/images/…` | Character image from `karuta-images`, CloudFront fallback on miss |
+| `/images/…` | Image from `karuta-images`. Character-art keys fall back to CloudFront on a miss. Contest keys do not |
 | `/health` | Plain `ok` |
 | `/robots.txt` | Allow all |
 
-Reserved first segments: `api`, `assets`, `content`, `favicon.ico`, `health`, `images`, `robots.txt`, `static`. Those names never become slugs.
+Reserved first segments: `api`, `assets`, `content`, `contests`, `favicon.ico`, `health`, `images`, `robots.txt`, `static`. Those names never become slugs.
 
 Slugs are exactly six characters in `[a-z0-9]`. They point only at internal `/{section}/{id}` paths. There are no open redirects.
 
-IDs increment per section. `content/1` and a future `logs/1` are independent.
+IDs increment per section. `content/1` and `contests/1` are independent.
 
 Unknown sections return 404.
 
@@ -42,9 +44,25 @@ A dump is an immutable snapshot. Ingest stores same-origin image URLs. Those pat
 - Version `0` or omitted: `/images/cards/{key}-{edition}.jpg`
 - Version greater than `0`: `/images/cards/versioned/{key}-{edition}-{version}.jpg`
 
-Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. A miss fetches Karuta's uncached host `d29rfjkp84y49u.cloudfront.net` and stores the full JPEG. The Worker does not build thumbs.
+Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. A miss on a character-art key fetches Karuta's uncached host `d29rfjkp84y49u.cloudfront.net` and stores the full JPEG. The Worker does not build thumbs.
 
 Public HTML shows names, series, editions and images. It does not scrape live production data.
+
+## Contest dumps
+
+A Card Hunt dump is an immutable snapshot of one finished event. The Worker polls Firestore every minute. There is no bot POST.
+
+1. Read `contests/card_hunt`.
+2. If `eventCounter` is not greater than the last dumped event, stop.
+3. Read `contests/card_hunt/events/{eventCounter}`.
+4. If `rewarded` is not true, stop. Keep the last-dumped number unchanged.
+5. List `contests/card_hunt/events/{eventCounter}/contest_entries/{card_id}`.
+6. Copy framed-card images from the saved URLs into `karuta-images` at `contests/card_hunt/{eventCounter}/{card_id}`.
+7. Store the snapshot and a slug. Canonical path is `/contests/{id}`.
+
+Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/cards/{key}-{edition}.jpg` for contest tiles.
+
+Public HTML shows the prompt, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries.
 
 ## Ingest
 
@@ -65,15 +83,18 @@ A successful response is `201` with `section`, `id`, `slug`, `path`, `shortPath`
 
 There is no idempotency key.
 
+Contest dumps are not ingested over HTTP.
+
 ## Visibility
 
-Pages are public. Writes require the ingest token. Soft and silent Karuta publishes are out of scope until Admin is wired.
+Pages are public. Content-dump writes require the ingest token. Soft and silent Karuta publishes are out of scope until Admin is wired.
 
 ## Non-goals
 
 - Karuta Admin or Discord webhook integration
 - `k!schedule` changes
 - Custom domain attachment
-- Historical backfill
+- Historical backfill of contests that ended before the first poll
 - Accounts
-- A public hostname on `karuta-images` (`img.krta.cc` is optional later)
+- A public hostname on `karuta-images` (`img.krta.cc` is out)
+- A bot POST for contest dumps

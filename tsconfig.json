@@ -10,5 +10,5 @@
     "verbatimModuleSyntax": true,
     "types": ["vitest/globals"]
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "worker-configuration.d.ts", "vitest.config.ts"]
 }

@@ -1,6 +1,15 @@
+import { formatContestScore } from './contest'
 import { escapeHtml } from './escape'
 import { dumpCounts } from './ingest'
-import type { ContentSnapshot, EditionRecord, ListedDump, SeriesRecord } from './types'
+import type {
+  ContentSnapshot,
+  ContestEntry,
+  ContestSnapshot,
+  EditionRecord,
+  ListedContest,
+  ListedDump,
+  SeriesRecord
+} from './types'
 
 const MONTHS = [
   'Jan.',
@@ -94,7 +103,7 @@ function layout(title: string, body: string): string {
   <main>
     ${body}
   </main>
-  <footer>Official Karuta content dumps. Card art belongs to its owners.</footer>
+  <footer>Official Karuta dumps. Card art belongs to its owners.</footer>
 </body>
 </html>`
 }
@@ -174,7 +183,10 @@ export function renderHome(dumps: ListedDump[]): string {
       </article>`
     }).join('')}</div>`
 
-  return layout('Content dumps', `<p class="meta">Published Karuta series, characters and editions.</p>${body}`)
+  return layout(
+    'Content dumps',
+    `<p class="meta">Published Karuta series, characters and editions. <a href="/contests">Card Hunt results</a>.</p>${body}`
+  )
 }
 
 export function renderContentDump(
@@ -197,6 +209,83 @@ export function renderContentDump(
     ${editionGallery('Updated editions', snapshot.updatedEditions)}
   `
   return layout(`Content dump ${id}`, body)
+}
+
+function contestTile(entry: ContestEntry, label: string): string {
+  const caption = `${entry.code} · E${entry.edition} · P${entry.number}`
+  const submitter = entry.submitter
+    ? `<span>User ID: ${escapeHtml(entry.submitter)}</span>`
+    : ''
+  return `<figure>
+    <img src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(label)}"${entry.imageUrl ? '' : ' hidden'}>
+    <figcaption>
+      <strong>${escapeHtml(label)}</strong>
+      ${escapeHtml(caption)}
+      ${submitter}
+    </figcaption>
+  </figure>`
+}
+
+export function renderContestHome(dumps: ListedContest[]): string {
+  const body = dumps.length === 0
+    ? '<p class="empty">No Card Hunt dumps yet.</p>'
+    : `<div class="list">${dumps.map((dump) => {
+      const href = dump.slug ? `/${dump.slug}` : `/contests/${dump.id}`
+      return `<article class="card">
+        <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
+        <h2><a href="${escapeHtml(href)}">Card Hunt #${dump.snapshot.eventCounter}</a></h2>
+        <p class="counts">${dump.snapshot.entries.length} ${dump.snapshot.entries.length === 1 ? 'entry' : 'entries'}.</p>
+      </article>`
+    }).join('')}</div>`
+
+  return layout(
+    'Card Hunt results',
+    `<p class="meta">Finished contests, newest first. <a href="/">Content dumps</a>.</p>${body}`
+  )
+}
+
+export function renderContestDump(
+  id: number,
+  createdAt: number,
+  snapshot: ContestSnapshot,
+  slug: string | null
+): string {
+  const short = slug ? ` Short URL: /${slug}.` : ''
+  const winners = snapshot.winners.length === 0
+    ? ''
+    : `<section>
+        <h2>Winners</h2>
+        <ul class="series-list">${snapshot.winners.map((winner) =>
+          `<li>Place ${winner.place}: user ${escapeHtml(winner.userId)}, score ${escapeHtml(formatContestScore(winner.score))}, award ${winner.reward}</li>`
+        ).join('')}</ul>
+      </section>`
+  const reference = snapshot.reference
+    ? `<section>
+        <h2>Reference card</h2>
+        <div class="gallery">${contestTile(snapshot.reference, `Reference · ${formatContestScore(snapshot.reference.score)}`)}</div>
+      </section>`
+    : '<p class="empty">The reference card was not saved for this contest.</p>'
+  const gallery = snapshot.entries.length === 0
+    ? '<p class="empty">No entries.</p>'
+    : `<div class="gallery">${snapshot.entries.map((row, index) =>
+      contestTile(row, `#${index + 1} · ${formatContestScore(row.score)}`)
+    ).join('')}</div>`
+
+  const body = `
+    <p class="meta">${escapeHtml(formatApDate(createdAt))}.${escapeHtml(short)}</p>
+    <p class="counts">${snapshot.entries.length} ${snapshot.entries.length === 1 ? 'entry' : 'entries'} · Highest score first.</p>
+    <section>
+      <h2>Prompt</h2>
+      <p class="meta" style="white-space:pre-wrap">${escapeHtml(snapshot.prompt || '(No prompt)')}</p>
+    </section>
+    ${winners}
+    ${reference}
+    <section>
+      <h2>Results</h2>
+      ${gallery}
+    </section>
+  `
+  return layout(`Card Hunt #${snapshot.eventCounter}`, body)
 }
 
 export function renderNotFound(): string {

@@ -1,6 +1,7 @@
 export const UNCACHED_CDN = 'https://d29rfjkp84y49u.cloudfront.net'
 
 const IMAGE_KEY = /^(cards|thumbs)\/(?:versioned\/)?[^./][^/]*\.jpg$/
+const CONTEST_KEY = /^contests\/card_hunt\/[1-9][0-9]*\/[^/]+$/
 
 export function keyedImagePath(key: string, edition: string, version = 0): string {
   const name = encodeURIComponent(key)
@@ -18,8 +19,20 @@ export function originImageUrl(key: string, edition: string, version = 0): strin
   return `${UNCACHED_CDN}/${keyedImagePath(key, edition, version)}`
 }
 
+export function contestImagePath(eventCounter: number, cardId: string): string {
+  return `contests/card_hunt/${eventCounter}/${encodeURIComponent(cardId)}`
+}
+
+export function contestImageUrl(eventCounter: number, cardId: string): string {
+  return `/images/${contestImagePath(eventCounter, cardId)}`
+}
+
 export function isKeyedObjectPath(path: string): boolean {
   return IMAGE_KEY.test(path)
+}
+
+export function isContestObjectPath(path: string): boolean {
+  return CONTEST_KEY.test(path) && !path.includes('..')
 }
 
 export async function ensureKeyedFull(
@@ -45,7 +58,40 @@ export async function ensureKeyedFull(
   return true
 }
 
+export async function copyContestImage(
+  bucket: R2Bucket,
+  objectKey: string,
+  sourceUrl: string
+): Promise<boolean> {
+  if (!isContestObjectPath(objectKey)) return false
+  const existing = await bucket.head(objectKey)
+  if (existing) return true
+  const response = await fetch(sourceUrl, { headers: { accept: 'image/*' } })
+  if (!response.ok || !response.body) return false
+  const contentType = response.headers.get('content-type') || 'image/jpeg'
+  await bucket.put(objectKey, response.body, {
+    httpMetadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable'
+    }
+  })
+  return true
+}
+
 export async function serveKeyedImage(bucket: R2Bucket, objectKey: string): Promise<Response> {
+  if (isContestObjectPath(objectKey)) {
+    const object = await bucket.get(objectKey)
+    if (!object) {
+      return new Response('Not found', { status: 404 })
+    }
+    return new Response(object.body, {
+      headers: {
+        'content-type': object.httpMetadata?.contentType || 'image/jpeg',
+        'cache-control': 'public, max-age=31536000, immutable',
+        'x-content-type-options': 'nosniff'
+      }
+    })
+  }
   if (!isKeyedObjectPath(objectKey)) {
     return new Response('Not found', { status: 404 })
   }

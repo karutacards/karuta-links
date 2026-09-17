@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { cardImageUrl, isKeyedObjectPath, keyedImagePath, originImageUrl } from './images'
+import {
+  cardImageUrl,
+  contestImagePath,
+  contestImageUrl,
+  isContestObjectPath,
+  isKeyedObjectPath,
+  keyedImagePath,
+  originImageUrl
+} from './images'
 
 describe('keyed image paths', () => {
   it('encodes the character key the same way today does', () => {
@@ -18,5 +26,13 @@ describe('keyed image paths', () => {
     expect(isKeyedObjectPath('cards/gojo-satoru-1.jpg')).toBe(true)
     expect(isKeyedObjectPath('../cards/x.jpg')).toBe(false)
     expect(isKeyedObjectPath('cards/../secret')).toBe(false)
+  })
+
+  it('keeps framed contest cards off the character-art prefix', () => {
+    expect(contestImagePath(12, 'ab-cd')).toBe('contests/card_hunt/12/ab-cd')
+    expect(contestImageUrl(12, 'ab-cd')).toBe('/images/contests/card_hunt/12/ab-cd')
+    expect(isContestObjectPath('contests/card_hunt/12/ab-cd')).toBe(true)
+    expect(isContestObjectPath('contests/card_hunt/12/../secret')).toBe(false)
+    expect(isKeyedObjectPath('contests/card_hunt/12/ab-cd')).toBe(false)
   })
 })

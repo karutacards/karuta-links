@@ -7,11 +7,16 @@ describe('classifyPath', () => {
     expect(classifyPath('/health')).toEqual({ type: 'health' })
     expect(classifyPath('/robots.txt')).toEqual({ type: 'robots' })
     expect(classifyPath('/api/v1/content')).toEqual({ type: 'ingest' })
+    expect(classifyPath('/contests')).toEqual({ type: 'contestHome' })
   })
 
   it('routes canonical content dumps', () => {
     expect(classifyPath('/content/1')).toEqual({ type: 'document', section: 'content', id: 1 })
     expect(classifyPath('/content/42/')).toEqual({ type: 'document', section: 'content', id: 42 })
+  })
+
+  it('routes canonical contest dumps', () => {
+    expect(classifyPath('/contests/1')).toEqual({ type: 'document', section: 'contests', id: 1 })
   })
 
   it('rejects unknown sections and invalid ids', () => {

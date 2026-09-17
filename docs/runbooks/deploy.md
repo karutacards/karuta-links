@@ -9,8 +9,10 @@ Production names are `karuta-links` for the Worker and the D1 database. `wrangle
 3. Put the returned `database_id` into `wrangler.jsonc`.
 4. Apply migrations: `pnpm run db:migrate:remote`.
 5. Set the ingest secret: `pnpm exec wrangler secret put INGEST_TOKEN`.
-6. Confirm `wrangler.jsonc` binds R2 `karuta-images` as `IMAGES`.
-7. Deploy: `pnpm run deploy`.
+6. Set Firestore secrets for the Card Hunt poll: `FIRESTORE_PROJECT_ID` and `FIRESTORE_SERVICE_ACCOUNT`. Use a read-only service account. Do not print the JSON.
+7. Confirm `wrangler.jsonc` binds R2 `karuta-images` as `IMAGES`.
+8. Apply `0002_contest_dumps.sql` with `pnpm run db:migrate:remote`.
+9. Deploy: `pnpm run deploy`.
 
 Do not pass the secret value on the command line.
 

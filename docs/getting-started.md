@@ -13,7 +13,7 @@ Linux or WSL plus Docker is the supported path. Host-global Node is not required
 cp .dev.vars.example .dev.vars
 ```
 
-`.dev.vars` is local-only. Do not commit it. The example token is `dev-ingest-token`.
+`.dev.vars` is local-only. Do not commit it. The example token is `dev-ingest-token`. Card Hunt polling also needs `FIRESTORE_PROJECT_ID` and `FIRESTORE_SERVICE_ACCOUNT` (the service-account JSON as one line). Leave those empty to skip the cron locally.
 
 ## Run with Docker
 

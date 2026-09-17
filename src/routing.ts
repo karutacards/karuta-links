@@ -31,11 +31,14 @@ export function classifyPath(pathname: string): Route {
   if (path === '/api/v1/content') {
     return { type: 'ingest' }
   }
+  if (path === '/contests') {
+    return { type: 'contestHome' }
+  }
 
   const segments = path.slice(1).split('/')
   if (segments.length === 2) {
     const [section, rawId] = segments
-    if (!section || section !== 'content') {
+    if (!section || (section !== 'content' && section !== 'contests')) {
       return { type: 'notFound' }
     }
     const id = rawId ? parsePositiveInt(rawId) : null
@@ -66,6 +69,8 @@ export function describeRoute(route: Route): string {
       return 'robots'
     case 'ingest':
       return 'ingest'
+    case 'contestHome':
+      return 'contestHome'
     case 'document':
       return `${route.section}/${route.id}`
     case 'slug':

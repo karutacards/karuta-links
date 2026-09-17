@@ -2,8 +2,10 @@ export const RESERVED_SEGMENTS = [
   'api',
   'assets',
   'content',
+  'contests',
   'favicon.ico',
   'health',
+  'images',
   'robots.txt',
   'static'
 ] as const
