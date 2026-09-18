@@ -22,7 +22,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/` | Karuta dumps: content updates and contest results, newest first |
 | `/content/{id}` | Canonical content dump. `{id}` is a positive integer with no leading zeros |
 | `/contests` | Contest results (Card Hunt), newest first |
-| `/contests/{id}` | Canonical contest dump. `{id}` is a positive integer with no leading zeros |
+| `/contests/{id}` | Canonical contest dump. `{id}` is the Card Hunt eventCounter |
 | `/drafts/import` | OAuth-gated importer handshake. Accepts a catalog via `postMessage` |
 | `/drafts/{id}` | OAuth-gated collaborative draft editor |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
@@ -45,7 +45,7 @@ Reserved first segments: `api`, `assets`, `content`, `contests`, `drafts`, `favi
 
 Slugs are exactly six characters in `[a-z0-9]`. They point only at internal `/{section}/{id}` paths. There are no open redirects.
 
-IDs increment per section. `content/1`, `contests/1` and `drafts/1` are independent.
+Content and draft IDs increment per section. Contest dump IDs are the Card Hunt `eventCounter`. `/contests/1` is Hunt #1.
 
 Unknown sections return 404.
 
@@ -67,12 +67,14 @@ Public HTML shows names, series, new aliases, editions and images. It does not s
 A Card Hunt dump is an immutable snapshot of one finished event. The Worker polls Firestore every minute. There is no bot POST.
 
 1. Read `contests/card_hunt`.
-2. If `eventCounter` is not greater than the last dumped event, stop.
+2. If `eventCounter` is not greater than the last claimed event, stop.
 3. Read `contests/card_hunt/events/{eventCounter}`.
-4. If `rewarded` is not true, stop. Keep the last-dumped number unchanged.
-5. List `contests/card_hunt/events/{eventCounter}/contest_entries/{card_id}`.
-6. Copy framed-card images from the saved URLs into `karuta-images` at `contests/card/{eventCounter}/{place}`. The reference card is `contests/card/{eventCounter}/ref`. Contest images are immutable snapshots. Responses send a one-year `Cache-Control` and `CDN-Cache-Control` and are stored in the Workers Cache API.
-7. Store the snapshot and a slug. Canonical path is `/contests/{id}`.
+4. If `rewarded` is not true, stop. Keep the last-claimed number unchanged.
+5. Claim that event in `contest_dumps`. If another cron already claimed it, stop.
+6. List `contests/card_hunt/events/{eventCounter}/contest_entries/{card_id}`.
+7. Write `/contests/{eventCounter}` and copy framed-card images into `karuta-images` at `contests/card/{eventCounter}/{place}`. The reference card is `contests/card/{eventCounter}/ref`. Contest images are immutable snapshots. Responses send a one-year `Cache-Control` and `CDN-Cache-Control` and are stored in the Workers Cache API.
+
+Canonical path is `/contests/{eventCounter}`.
 
 Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/characters/{key}-{edition}.jpg` for contest tiles.
 

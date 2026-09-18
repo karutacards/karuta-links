@@ -6,7 +6,7 @@ import {
   copySnapshotImages,
   type ContestSource
 } from './contest'
-import { insertContestDump, lastDumpedEvent, listRecentContests } from './db'
+import { claimContestEvent, insertContestDump, lastDumpedEvent, listRecentContests } from './db'
 import { contestImagePath } from './images'
 import { getFirestoreDocument, listFirestoreDocuments } from './firestore'
 import { CARD_HUNT_NAME } from './types'
@@ -58,11 +58,15 @@ export async function pollCardHunt(
     return action === 'waiting' ? 'waiting' : 'skipped'
   }
 
+  if (!await claimContestEvent(env.DB, eventCounter)) {
+    return 'exists'
+  }
+
   const entries = await source.listEntries(eventCounter)
   const snapshot = buildContestSnapshot(eventCounter, event, entries)
+  const created = await insertContestDump(env.DB, snapshot)
   if (env.IMAGES) {
     await copySnapshotImages(env.IMAGES, snapshot)
   }
-  const created = await insertContestDump(env.DB, snapshot)
   return created ? 'created' : 'exists'
 }

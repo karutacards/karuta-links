@@ -44,6 +44,11 @@ describe('contest poll decision', () => {
     expect(nextPollAction(4, null, true)).toBe('skipped')
   })
 
+  it('skips a claimed event so a later cron does not pick it up again', () => {
+    expect(nextPollAction(2, 2, true)).toBe('skipped')
+    expect(nextPollAction(2, 3, true)).toBe('dump')
+  })
+
   it('waits when a newer event is not rewarded yet', () => {
     expect(nextPollAction(4, 5, false)).toBe('waiting')
   })

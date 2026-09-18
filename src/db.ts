@@ -60,23 +60,50 @@ export async function insertContentDump(
   throw new Error('Failed to allocate a unique slug')
 }
 
+export async function claimContestEvent(
+  db: D1Database,
+  eventCounter: number,
+  contestName = CARD_HUNT_NAME
+): Promise<boolean> {
+  if (!Number.isSafeInteger(eventCounter) || eventCounter < 1) {
+    return false
+  }
+  try {
+    await db
+      .prepare(
+        `INSERT INTO contest_dumps (contest_name, event_counter, document_id)
+         VALUES (?, ?, ?)`
+      )
+      .bind(contestName, eventCounter, eventCounter)
+      .run()
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/UNIQUE/i.test(message)) {
+      return false
+    }
+    throw error
+  }
+}
+
 export async function insertContestDump(
   db: D1Database,
   snapshot: ContestSnapshot,
   createdAt = Date.now()
 ): Promise<{ id: number; slug: string } | null> {
+  const id = snapshot.eventCounter
+  if (!Number.isSafeInteger(id) || id < 1) {
+    return null
+  }
   const existing = await db
     .prepare(
-      `SELECT document_id FROM contest_dumps
-       WHERE contest_name = ? AND event_counter = ?`
+      `SELECT id FROM documents WHERE section = ? AND id = ?`
     )
-    .bind(snapshot.contestName, snapshot.eventCounter)
-    .first<{ document_id: number }>()
+    .bind(CONTEST_SECTION, id)
+    .first<{ id: number }>()
   if (existing) {
     return null
   }
-
-  const id = await allocateId(db, CONTEST_SECTION)
   const payload = JSON.stringify(snapshot)
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -89,16 +116,12 @@ export async function insertContestDump(
         ).bind(CONTEST_SECTION, id, createdAt, CONTEST_KIND, payload),
         db.prepare(
           `INSERT INTO slugs (slug, section, id) VALUES (?, ?, ?)`
-        ).bind(slug, CONTEST_SECTION, id),
-        db.prepare(
-          `INSERT INTO contest_dumps (contest_name, event_counter, document_id)
-           VALUES (?, ?, ?)`
-        ).bind(snapshot.contestName, snapshot.eventCounter, id)
+        ).bind(slug, CONTEST_SECTION, id)
       ])
       return { id, slug }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (/contest_dumps/i.test(message) && /UNIQUE/i.test(message)) {
+      if (/UNIQUE/i.test(message) && /contest_dumps|documents/i.test(message)) {
         return null
       }
       if (!/UNIQUE/i.test(message) || attempt === 7) {

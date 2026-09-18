@@ -29,7 +29,7 @@ Contest HTML uses `/images/contests/card/{event}/{place}`. The reference card is
 
 ## Card Hunt poll
 
-Every minute the Worker reads `contests/card_hunt`. If `eventCounter` is greater than the last dumped event and that event's `rewarded` field is true, it lists `contest_entries`, copies framed-card images and writes `/contests/{id}`. It does not npm-install `karuta-data-interface`. Firestore REST uses `FIRESTORE_PROJECT_ID` and `FIRESTORE_SERVICE_ACCOUNT`.
+Every minute the Worker reads `contests/card_hunt`. If `eventCounter` is greater than the last claimed event and that event's `rewarded` field is true, it claims the event, then writes `/contests/{eventCounter}` and copies framed-card images. A later cron does not pick up a claimed event. It does not npm-install `karuta-data-interface`. Firestore REST uses `FIRESTORE_PROJECT_ID` and `FIRESTORE_SERVICE_ACCOUNT`.
 
 ## Auth
 
