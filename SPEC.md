@@ -122,11 +122,13 @@ Drafts are versioned catalog entities, not a live shared document. Public conten
 
 Every mode checks `blacklist.json.gz` on R2 `karuta-data`. Credentials mode reads `statistics_user/{discordId}` from Firestore. Failed access is `403` with a complete sentence that does not name the failed bar. A missing blacklist or Firestore config fails closed with `503`.
 
-IDs in `lockIds` can lock a draft. Locked drafts reject edits with `423` and can be exported as importer CSV columns `type,action,name,seriesKey,aliases`. Groups, editions and images stay out.
+IDs in `lockIds` can lock a draft. Locked drafts reject edits with `423` and can be exported as importer CSV columns `type,action,name,seriesKey,aliases`. The editor adds aliases one at a time. CSV export joins those aliases with `|`. Groups, editions and images stay out.
 
 Each series or character has a revision. A save sends the revision it started from. A conflict or a delete-while-edit returns `409` with `CONFLICT` or `ENTITY_GONE` plus the current entity. The editor reloads that row. There are no row locks that last while a tab is open.
 
 The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/drafts/import` and `postMessage` from `https://karuta.gswaccess.com`. The import page POSTs `/api/v1/drafts` with the session cookie. It does not use `INGEST_TOKEN`.
+
+Draft HTML is a standalone editor. It does not use dump page chrome, a home link or a footer. Fields have visible labels. The layout is a single column on small viewports.
 
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 

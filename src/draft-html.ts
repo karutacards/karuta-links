@@ -20,107 +20,122 @@ function layout(title: string, body: string, script = ''): string {
   <title>${escapeHtml(title)}</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #12141a;
-      --panel: #1b1f29;
-      --ink: #f4f1ea;
-      --muted: #b7b0a3;
-      --line: #2c3342;
-      --accent: #e8c27a;
-      --pill: #2a3348;
-      --danger: #f0a3a3;
+      color-scheme: light;
+      --bg: #fff;
+      --ink: #111;
+      --muted: #3d3d3d;
+      --line: #8a8a8a;
+      --fill: #f4f4f4;
+      --accent: #0b57d0;
+      --danger: #8a1010;
+      --ok: #0b4d1e;
     }
     * { box-sizing: border-box; }
+    html { font-size: 100%; }
     body {
       margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
+      padding: 0.75rem;
+      font: 1rem/1.45 system-ui, sans-serif;
       background: var(--bg);
       color: var(--ink);
-      line-height: 1.5;
     }
-    a { color: var(--accent); }
-    header, main, footer { width: min(1100px, calc(100% - 2rem)); margin: 0 auto; }
-    header { padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--line); }
-    header h1 { margin: 0.35rem 0 0; }
-    .kicker { letter-spacing: 0.12em; font-size: 0.8rem; color: var(--accent); }
-    main { padding: 1.5rem 0 4rem; }
-    footer { color: var(--muted); padding: 1rem 0 2rem; font-size: 0.9rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.35rem; }
+    h2 { font-size: 1.1rem; margin: 1.25rem 0 0.5rem; }
+    p { margin: 0 0 0.75rem; }
     .meta, .copy { color: var(--muted); }
-    .banner { padding: 0.75rem 1rem; border-radius: 8px; margin: 0 0 1rem; }
-    .banner.error { background: #3a2228; color: var(--danger); }
-    .banner.ok { background: #223228; color: #c8e6c9; }
-    .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0 0 1.25rem; }
-    button, .file {
-      border: 1px solid var(--line);
-      background: var(--panel);
+    .banner[hidden] { display: none; }
+    .banner {
+      margin: 0 0 0.75rem;
+      padding: 0.65rem 0.75rem;
+      border: 2px solid var(--ink);
+    }
+    .banner.error { border-color: var(--danger); color: var(--danger); }
+    .banner.ok { border-color: var(--ok); color: var(--ok); }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1rem; }
+    button, .file, summary {
+      min-height: 2.75rem;
+      padding: 0.5rem 0.75rem;
+      border: 2px solid var(--ink);
+      background: var(--bg);
       color: var(--ink);
-      border-radius: 6px;
-      padding: 0.45rem 0.8rem;
+      font: inherit;
       cursor: pointer;
-      font: inherit;
     }
-    button.primary { border-color: var(--accent); color: var(--accent); }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-    .row {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 0.85rem 1rem;
-      margin: 0 0 0.65rem;
-    }
-    .row-head { display: flex; flex-wrap: wrap; gap: 0.5rem 0.85rem; align-items: center; }
-    .kind { letter-spacing: 0.08em; font-size: 0.75rem; color: var(--accent); }
-    .pills { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.45rem 0 0; }
-    .pill {
-      display: inline-block;
-      padding: 0.1rem 0.45rem;
-      border-radius: 999px;
-      background: var(--pill);
-      font-size: 0.85rem;
-    }
-    .chip {
-      border: 0;
-      background: #2f3a2f;
-      color: #d7ecd8;
-      border-radius: 999px;
-      padding: 0.15rem 0.55rem;
-      font-size: 0.8rem;
-    }
-    .editor { display: grid; gap: 0.45rem; margin-top: 0.65rem; }
-    .editor input {
+    .file { display: inline-flex; align-items: center; text-decoration: none; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.danger { border-color: var(--danger); color: var(--danger); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    label { display: grid; gap: 0.25rem; font-weight: 600; }
+    input {
       width: 100%;
-      padding: 0.4rem 0.5rem;
-      border-radius: 6px;
-      border: 1px solid var(--line);
-      background: #12151c;
+      min-height: 2.75rem;
+      padding: 0.45rem 0.6rem;
+      border: 2px solid var(--ink);
+      background: var(--bg);
       color: var(--ink);
       font: inherit;
     }
-    .row-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-    .audit {
-      display: none;
-      margin-top: 0.6rem;
-      color: var(--muted);
-      font-size: 0.9rem;
+    .fields { display: grid; gap: 0.65rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .actions button, .actions .file { flex: 1 1 8rem; }
+    details { margin: 0 0 1rem; }
+    details > .fields { margin-top: 0.65rem; }
+    .row {
+      padding: 0.75rem 0;
+      border-top: 1px solid var(--line);
     }
-    .audit.open { display: block; }
-    .audit li { margin: 0 0 0.35rem; }
-    .add-form {
-      background: var(--panel);
-      border: 1px dashed var(--line);
-      border-radius: 10px;
-      padding: 0.85rem 1rem;
-      margin: 0 0 1.5rem;
+    .row-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.35rem 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .kind { font-weight: 700; }
+    .audit { margin: 0.5rem 0 0; padding-left: 1.2rem; color: var(--muted); }
+    .audit[hidden] { display: none; }
+    .empty { color: var(--muted); }
+    fieldset {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      min-width: 0;
+    }
+    legend { font-weight: 600; padding: 0; }
+    .alias-list {
+      list-style: none;
+      margin: 0.4rem 0 0.55rem;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .alias-list:empty { display: none; }
+    .alias-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 2px solid var(--ink);
+      padding: 0.15rem 0.3rem 0.15rem 0.55rem;
+    }
+    .alias-list button { min-height: 2.25rem; }
+    .alias-add { display: grid; gap: 0.5rem; }
+    @media (min-width: 640px) {
+      body { padding: 1.25rem; }
+      .row .fields { grid-template-columns: 1fr 1fr; }
+      .row .fields .name,
+      .row .fields .aliases,
+      .row .fields .actions { grid-column: 1 / -1; }
+      .alias-add { grid-template-columns: 1fr auto; align-items: end; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <p class="kicker"><a href="/">krta.cc</a></p>
-    <h1>${escapeHtml(title)}</h1>
-  </header>
-  <main>${body}</main>
-  <footer>Card art belongs to its owners.</footer>
+  ${body}
   ${script}
 </body>
 </html>`
@@ -129,22 +144,23 @@ function layout(title: string, body: string, script = ''): string {
 export function renderDraftForbidden(): string {
   return layout(
     'Draft unavailable',
-    '<p class="copy">You do not have access to this draft.</p>'
+    '<h1>Draft unavailable</h1><p class="copy">You do not have access to this draft.</p>'
   )
 }
 
 export function renderDraftUnavailable(): string {
   return layout(
     'Draft unavailable',
-    '<p class="copy">Draft access could not be verified.</p>'
+    '<h1>Draft unavailable</h1><p class="copy">Draft access could not be verified.</p>'
   )
 }
 
 export function renderDraftImport(): string {
   return layout(
     'Import draft',
-    `<p class="copy">Waiting for a catalog from Karuta Admin.</p>
-     <p id="import-status" class="meta"></p>`,
+    `<h1>Import draft</h1>
+     <p class="copy">Waiting for a catalog from Karuta Admin.</p>
+     <p id="import-status" class="banner" role="status" hidden></p>`,
     `<script>${DRAFT_CLIENT_SCRIPT}</script>
      <script>window.krtaDraftImport()</script>`
   )
@@ -157,7 +173,7 @@ export function renderDraftEditor(
   const locked = Boolean(draft.lockedAt)
   const lockLine = locked && draft.lockedAt
     ? `Locked ${formatApDate(draft.lockedAt)}.`
-    : 'Unlocked. Saves use the revision on each series or character.'
+    : 'Unlocked. Each save uses the revision on that series or character.'
   const payload = {
     id: draft.id,
     locked,
@@ -168,35 +184,48 @@ export function renderDraftEditor(
   }
   return layout(
     `Draft ${draft.id}`,
-    `<p class="meta">${escapeHtml(lockLine)}</p>
-     <p id="draft-status" class="banner" hidden></p>
+    `<h1>Draft ${draft.id}</h1>
+     <p class="meta">${escapeHtml(lockLine)}</p>
+     <p id="draft-status" class="banner" role="status" hidden></p>
      <div class="toolbar">
        ${options.canLock && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
-       ${options.canLock && locked ? '<a class="file" id="export-draft" href="/api/v1/drafts/' + draft.id + '/export.csv">Export CSV</a>' : ''}
+       ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.csv">Export CSV</a>` : ''}
      </div>
-     ${locked ? '' : `<section class="add-form">
-       <h2>Add series</h2>
-       <div class="editor">
-         <input id="add-series-name" placeholder="Series name">
-         <input id="add-series-aliases" placeholder="Aliases, separated by |">
-         <button type="button" id="add-series">Add series</button>
+     ${locked ? '' : `<details>
+       <summary>Add series</summary>
+       <div class="fields">
+         <label>Name <input id="add-series-name" autocomplete="off"></label>
+         <fieldset class="aliases" id="add-series-aliases">
+           <legend>Aliases</legend>
+           <ul class="alias-list" data-alias-list></ul>
+           <div class="alias-add">
+             <label>New alias <input data-alias-input autocomplete="off"></label>
+             <button type="button" data-alias-add>Add alias</button>
+           </div>
+         </fieldset>
+         <div class="actions"><button type="button" id="add-series">Add series</button></div>
        </div>
-       <h2>Add character</h2>
-       <div class="editor">
-         <input id="add-character-name" placeholder="Character name">
-         <input id="add-character-series" placeholder="Series key">
-         <input id="add-character-aliases" placeholder="Aliases, separated by |">
-         <button type="button" id="add-character">Add character</button>
+     </details>
+     <details>
+       <summary>Add character</summary>
+       <div class="fields">
+         <label>Name <input id="add-character-name" autocomplete="off"></label>
+         <label>Series key <input id="add-character-series" autocomplete="off"></label>
+         <fieldset class="aliases" id="add-character-aliases">
+           <legend>Aliases</legend>
+           <ul class="alias-list" data-alias-list></ul>
+           <div class="alias-add">
+             <label>New alias <input data-alias-input autocomplete="off"></label>
+             <button type="button" data-alias-add>Add alias</button>
+           </div>
+         </fieldset>
+         <div class="actions"><button type="button" id="add-character">Add character</button></div>
        </div>
-     </section>`}
-     <section>
-       <h2>Series</h2>
-       <div id="series-list"></div>
-     </section>
-     <section>
-       <h2>Characters</h2>
-       <div id="character-list"></div>
-     </section>
+     </details>`}
+     <h2>Series</h2>
+     <div id="series-list"></div>
+     <h2>Characters</h2>
+     <div id="character-list"></div>
      <script type="application/json" id="draft-data">${embedJson(payload)}</script>`,
     `<script>${DRAFT_CLIENT_SCRIPT}</script>
      <script>window.krtaDraftEditor()</script>`
@@ -204,5 +233,8 @@ export function renderDraftEditor(
 }
 
 export function renderDraftNotFound(): string {
-  return layout('Draft not found', '<p class="copy">That draft does not exist.</p>')
+  return layout(
+    'Draft not found',
+    '<h1>Draft not found</h1><p class="copy">That draft does not exist.</p>'
+  )
 }
