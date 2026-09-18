@@ -175,6 +175,11 @@ function countLine(snapshot: ContentSnapshot): string {
   return parts.join(', ')
 }
 
+function countDescription(snapshot: ContentSnapshot): string {
+  const line = countLine(snapshot)
+  return line ? `${line}.` : ''
+}
+
 function entryDescription(count: number): string {
   return `${count} ${count === 1 ? 'entry' : 'entries'}.`
 }
@@ -270,7 +275,7 @@ function draftCards(dumps: ListedDump[]): string {
     return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
         <h3><a href="${escapeHtml(href)}">Content draft ${dump.id}</a></h3>
-        <p class="counts">${escapeHtml(countLine(dump.snapshot))}</p>
+        <p class="counts">${escapeHtml(countDescription(dump.snapshot))}</p>
       </article>`
   }).join('')}</div>`
 }
@@ -311,7 +316,7 @@ export function renderContentDump(
   snapshot: ContentSnapshot,
   slug: string | null
 ): string {
-  const description = countLine(snapshot)
+  const description = countDescription(snapshot)
   const environment = snapshot.environment !== 'production'
     ? `${snapshot.environment.charAt(0).toUpperCase()}${snapshot.environment.slice(1)}`
     : undefined
