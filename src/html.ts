@@ -46,13 +46,19 @@ export function formatApDate(ms: number): string {
   return `${month} ${day}, ${year}, ${hours}:${minutes} ${period} UTC`
 }
 
-function layout(title: string, body: string): string {
+function layout(title: string, body: string, description?: string): string {
+  const descriptionTags = description
+    ? `
+  <meta name="description" content="${escapeHtml(description)}">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">`
+    : ''
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(title)}</title>${descriptionTags}
   <style>
     :root {
       color-scheme: dark;
@@ -95,6 +101,8 @@ function layout(title: string, body: string): string {
     .series-list { columns: 2; gap: 1.5rem; }
     @media (max-width: 720px) { .series-list { columns: 1; } }
     .series-list li { break-inside: avoid; margin: 0 0 0.35rem; }
+    main > section + section { margin-top: 2.5rem; }
+    main > section > h2 { margin: 0 0 0.85rem; }
   </style>
 </head>
 <body>
@@ -105,7 +113,7 @@ function layout(title: string, body: string): string {
   <main>
     ${body}
   </main>
-  <footer>Official Karuta dumps. Card art belongs to its owners.</footer>
+  <footer>Card art belongs to its owners.</footer>
 </body>
 </html>`
 }
@@ -132,6 +140,28 @@ function countLine(snapshot: ContentSnapshot): string {
       : ''
   ].filter(Boolean)
   return parts.join(', ')
+}
+
+function countDescription(snapshot: ContentSnapshot): string {
+  const line = countLine(snapshot)
+  return line ? `${line}.` : ''
+}
+
+function entryDescription(count: number): string {
+  return `${count} ${count === 1 ? 'entry' : 'entries'}.`
+}
+
+function dumpByline(createdAt: number, slug: string | null, notes: string[] = []): string {
+  const lines = [
+    `<p class="meta">${escapeHtml(formatApDate(createdAt))}</p>`,
+    ...notes.map((note) => `<p class="meta">${escapeHtml(note)}</p>`)
+  ]
+  if (slug) {
+    lines.push(
+      `<p class="meta"><a href="/${escapeHtml(slug)}">${escapeHtml(`krta.cc/${slug}`)}</a></p>`
+    )
+  }
+  return lines.join('\n    ')
 }
 
 function seriesList(title: string, rows: SeriesRecord[]): string {
@@ -202,21 +232,47 @@ function aliasLists(
   </section>`
 }
 
-export function renderHome(dumps: ListedDump[]): string {
-  const body = dumps.length === 0
-    ? '<p class="empty">No content dumps yet.</p>'
-    : `<div class="list">${dumps.map((dump) => {
-      const href = dump.slug ? `/${dump.slug}` : `/content/${dump.id}`
-      return `<article class="card">
+function draftCards(dumps: ListedDump[]): string {
+  if (dumps.length === 0) {
+    return '<p class="empty">No content drafts yet.</p>'
+  }
+  return `<div class="list">${dumps.map((dump) => {
+    const href = dump.slug ? `/${dump.slug}` : `/content/${dump.id}`
+    return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
-        <h2><a href="${escapeHtml(href)}">Content dump ${dump.id}</a></h2>
-        <p class="counts">${escapeHtml(countLine(dump.snapshot))}</p>
+        <h3><a href="${escapeHtml(href)}">Content draft ${dump.id}</a></h3>
+        <p class="counts">${escapeHtml(countDescription(dump.snapshot))}</p>
       </article>`
-    }).join('')}</div>`
+  }).join('')}</div>`
+}
 
+function resultCards(dumps: ListedContest[]): string {
+  if (dumps.length === 0) {
+    return '<p class="empty">No contest results yet.</p>'
+  }
+  return `<div class="list">${dumps.map((dump) => {
+    const href = dump.slug ? `/${dump.slug}` : `/contests/${dump.id}`
+    return `<article class="card">
+        <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
+        <h3><a href="${escapeHtml(href)}">Card Hunt #${dump.snapshot.eventCounter}</a></h3>
+        <p class="counts">${escapeHtml(entryDescription(dump.snapshot.entries.length))}</p>
+      </article>`
+  }).join('')}</div>`
+}
+
+export function renderHome(drafts: ListedDump[], results: ListedContest[]): string {
   return layout(
-    'Content dumps',
-    `<p class="meta">Published Karuta series, characters and editions. <a href="/contests">Card Hunt results</a>.</p>${body}`
+    'Karuta dumps',
+    `<p class="meta">Dumps of published drafts and contest results.</p>
+    <section>
+      <h2>Content drafts</h2>
+      ${draftCards(drafts)}
+    </section>
+    <section>
+      <h2>Contest results</h2>
+      ${resultCards(results)}
+    </section>`,
+    'Dumps of published drafts and contest results.'
   )
 }
 
@@ -226,13 +282,13 @@ export function renderContentDump(
   snapshot: ContentSnapshot,
   slug: string | null
 ): string {
-  const short = slug ? ` Short URL: /${slug}.` : ''
-  const envNote = snapshot.environment !== 'production'
-    ? ` Environment: ${snapshot.environment}.`
-    : ''
+  const description = countDescription(snapshot)
+  const notes = snapshot.environment !== 'production'
+    ? [`Environment: ${snapshot.environment}`]
+    : []
   const body = `
-    <p class="meta">${escapeHtml(formatApDate(createdAt))}.${escapeHtml(envNote)}${escapeHtml(short)}</p>
-    <p class="counts">${escapeHtml(countLine(snapshot))}</p>
+    ${description ? `<p class="meta">${escapeHtml(description)}</p>` : ''}
+    ${dumpByline(createdAt, slug, notes)}
     ${seriesList('New series', snapshot.newSeries)}
     ${seriesList('Updated series', snapshot.updatedSeries)}
     ${characterNames('New characters', snapshot.newCharacters)}
@@ -240,7 +296,7 @@ export function renderContentDump(
     ${editionGallery('New editions', snapshot.newEditions)}
     ${editionGallery('Updated editions', snapshot.updatedEditions)}
   `
-  return layout(`Content dump ${id}`, body)
+  return layout(`Content draft ${id}`, body, description || undefined)
 }
 
 function contestTile(entry: ContestEntry, label: string): string {
@@ -260,19 +316,20 @@ function contestTile(entry: ContestEntry, label: string): string {
 
 export function renderContestHome(dumps: ListedContest[]): string {
   const body = dumps.length === 0
-    ? '<p class="empty">No Card Hunt dumps yet.</p>'
+    ? '<p class="empty">No contest results yet.</p>'
     : `<div class="list">${dumps.map((dump) => {
       const href = dump.slug ? `/${dump.slug}` : `/contests/${dump.id}`
       return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
         <h2><a href="${escapeHtml(href)}">Card Hunt #${dump.snapshot.eventCounter}</a></h2>
-        <p class="counts">${dump.snapshot.entries.length} ${dump.snapshot.entries.length === 1 ? 'entry' : 'entries'}.</p>
+        <p class="counts">${escapeHtml(entryDescription(dump.snapshot.entries.length))}</p>
       </article>`
     }).join('')}</div>`
 
   return layout(
-    'Card Hunt results',
-    `<p class="meta">Finished contests, newest first. <a href="/">Content dumps</a>.</p>${body}`
+    'Contest results',
+    `<p class="meta">Finished contests, newest first. <a href="/">Karuta dumps</a>.</p>${body}`,
+    'Finished contests, newest first.'
   )
 }
 
@@ -282,7 +339,6 @@ export function renderContestDump(
   snapshot: ContestSnapshot,
   slug: string | null
 ): string {
-  const short = slug ? ` Short URL: /${slug}.` : ''
   const winners = snapshot.winners.length === 0
     ? ''
     : `<section>
@@ -303,9 +359,10 @@ export function renderContestDump(
       contestTile(row, `#${index + 1} · ${formatContestScore(row.score)}`)
     ).join('')}</div>`
 
+  const description = entryDescription(snapshot.entries.length)
   const body = `
-    <p class="meta">${escapeHtml(formatApDate(createdAt))}.${escapeHtml(short)}</p>
-    <p class="counts">${snapshot.entries.length} ${snapshot.entries.length === 1 ? 'entry' : 'entries'} · Highest score first.</p>
+    <p class="meta">${escapeHtml(description)}</p>
+    ${dumpByline(createdAt, slug)}
     <section>
       <h2>Prompt</h2>
       <p class="meta" style="white-space:pre-wrap">${escapeHtml(snapshot.prompt || '(No prompt)')}</p>
@@ -314,10 +371,11 @@ export function renderContestDump(
     ${reference}
     <section>
       <h2>Results</h2>
+      <p class="meta">Highest score first.</p>
       ${gallery}
     </section>
   `
-  return layout(`Card Hunt #${snapshot.eventCounter}`, body)
+  return layout(`Card Hunt #${snapshot.eventCounter}`, body, description)
 }
 
 export function renderNotFound(): string {

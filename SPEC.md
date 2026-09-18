@@ -4,7 +4,7 @@ This file is the source of truth for implemented behavior. If code and prose dis
 
 ## Purpose
 
-krta.cc stores official Karuta dumps that do not present well in Discord. Sections are incrementally ID'd content dumps and Card Hunt contest results.
+krta.cc stores Karuta dumps that do not present well in Discord. Sections are incrementally ID'd content drafts and Card Hunt contest results.
 
 ## Names
 
@@ -19,9 +19,9 @@ krta.cc stores official Karuta dumps that do not present well in Discord. Sectio
 
 | Path | Behavior |
 | --- | --- |
-| `/` | Recent content dumps, newest first |
+| `/` | Karuta dumps: content drafts and contest results, newest first |
 | `/content/{id}` | Canonical content dump. `{id}` is a positive integer with no leading zeros |
-| `/contests` | Recent Card Hunt dumps, newest first |
+| `/contests` | Contest results (Card Hunt), newest first |
 | `/contests/{id}` | Canonical contest dump. `{id}` is a positive integer with no leading zeros |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
@@ -48,7 +48,7 @@ Those are unframed character edition images. Framed Card Hunt tiles use `/images
 
 Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. Character-art objects stay at Karuta's `cards/…` keys in R2 and on the uncached host `d29rfjkp84y49u.cloudfront.net`. A miss fetches that origin and stores the full JPEG. The Worker does not build thumbs.
 
-Public HTML shows names, series, new aliases, editions and images. It does not show groups. It does not scrape live production data.
+Public HTML shows names, series, new aliases, editions and images. It does not show groups. It does not scrape live production data. The page description is the same count line as the home listing. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
 
 ## Contest dumps
 
@@ -64,7 +64,7 @@ A Card Hunt dump is an immutable snapshot of one finished event. The Worker poll
 
 Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/characters/{key}-{edition}.jpg` for contest tiles.
 
-Public HTML shows the prompt, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries.
+Public HTML shows the prompt, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries. The page description is the entry count. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
 
 ## Ingest
 

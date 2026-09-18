@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatApDate, renderContentDump, renderContestDump } from './html'
+import { formatApDate, renderContentDump, renderContestDump, renderHome } from './html'
 import { CONTENT_KIND, CONTEST_KIND } from './types'
 
 describe('formatApDate', () => {
@@ -42,6 +42,41 @@ describe('renderContestDump', () => {
     expect(page).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(page).not.toContain('<script>alert(1)</script>')
     expect(page).toContain('User ID: 99')
+    expect(page).toContain('content="1 entry."')
+    expect(page).toContain('>krta.cc/abc123</a>')
+    expect(page).not.toContain('Short URL:')
+    expect(page).not.toContain('UTC. krta.cc')
+    expect(page).not.toContain('>/abc123<')
+  })
+})
+
+describe('renderHome', () => {
+  it('lists content drafts and contest results under Karuta dumps', () => {
+    const page = renderHome([{
+      id: 1,
+      createdAt: Date.UTC(2026, 8, 17, 12, 0),
+      slug: 'yjxndx',
+      snapshot: {
+        kind: CONTENT_KIND,
+        environment: 'production',
+        newSeries: [],
+        updatedSeries: [],
+        newCharacters: [],
+        newEditions: [],
+        updatedEditions: [],
+        newSeriesAliases: [],
+        newCharacterAliases: []
+      }
+    }], [])
+
+    expect(page).toContain('<title>Karuta dumps</title>')
+    expect(page).toContain('content="Dumps of published drafts and contest results."')
+    expect(page).toContain('Content drafts')
+    expect(page).toContain('Contest results')
+    expect(page).toContain('Content draft 1')
+    expect(page).toContain('No contest results yet.')
+    expect(page).not.toContain('Official')
+    expect(page).not.toContain('Content dumps')
   })
 })
 
@@ -67,13 +102,15 @@ describe('renderContentDump', () => {
         seriesName: 'Jujutsu Kaisen',
         aliases: ['The Honored One']
       }]
-    }, null)
+    }, 'abcd12')
 
     expect(page).toContain('New aliases')
     expect(page).toContain('Jujutsu Kaisen: JJK')
     expect(page).toContain('Gojo Satoru (Jujutsu Kaisen): The Honored One')
     expect(page).not.toContain('shonen')
-    expect(page).toContain('1 series with new aliases')
-    expect(page).toContain('1 character with new aliases')
+    expect(page).toContain('1 series with new aliases, 1 character with new aliases.')
+    expect(page).toContain('content="1 series with new aliases, 1 character with new aliases."')
+    expect(page).toContain('>krta.cc/abcd12</a>')
+    expect(page).not.toContain('Short URL:')
   })
 })

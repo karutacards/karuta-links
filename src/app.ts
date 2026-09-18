@@ -41,8 +41,11 @@ app.get('/health', (c) => c.text('ok'))
 app.get('/robots.txt', (c) => c.text('User-agent: *\nAllow: /\n'))
 
 app.get('/', async (c) => {
-  const dumps = await listRecentContent(c.env.DB)
-  return html(renderHome(dumps))
+  const [drafts, results] = await Promise.all([
+    listRecentContent(c.env.DB),
+    listRecentContests(c.env.DB)
+  ])
+  return html(renderHome(drafts, results))
 })
 
 app.post('/api/v1/content', async (c) => {
