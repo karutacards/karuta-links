@@ -11,19 +11,34 @@ describe('formatApDate', () => {
 })
 
 describe('renderContestDump', () => {
-  it('escapes the prompt and lists ranked entries', () => {
+  it('escapes the description and lists ranked entries', () => {
     const page = renderContestDump(1, Date.UTC(2026, 8, 17, 12, 0), {
       kind: CONTEST_KIND,
       contestName: 'card_hunt',
       eventCounter: 3,
-      prompt: '<script>alert(1)</script>',
+      description: '<script>alert(1)</script>',
       judgingFinishedAt: null,
       buyInPrice: 100,
       currency: 'gold',
       prizePool: 500,
       submissionCount: 1,
       reference: null,
-      winners: [],
+      winners: [{
+        place: 1,
+        userId: '11',
+        score: 1300,
+        reward: 500
+      }, {
+        place: 2,
+        userId: '22',
+        score: 1100,
+        reward: 300
+      }, {
+        place: 3,
+        userId: '33',
+        score: 980,
+        reward: 200
+      }],
       entries: [{
         cardId: 'ab',
         code: 'ABCDE',
@@ -41,7 +56,14 @@ describe('renderContestDump', () => {
     expect(page).toContain('Card Hunt #3')
     expect(page).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(page).not.toContain('<script>alert(1)</script>')
-    expect(page).toContain('User ID: 99')
+    expect(page).toContain('<h2>Description</h2>')
+    expect(page).not.toContain('Prompt')
+    expect(page).not.toContain('prompt')
+    expect(page).toContain('class="user-id">99</span>')
+    expect(page).toContain('class="user-id">11</p>')
+    expect(page).toContain('class="winners"')
+    expect(page).not.toContain('class="series-list"')
+    expect(page).not.toContain('User ID:')
     expect(page).toContain('content="1 entry."')
     expect(page).toContain('property="og:description" content="1 entry."')
     expect(page).toContain('>krta.cc/abc123</a>')

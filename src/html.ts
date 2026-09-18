@@ -6,6 +6,7 @@ import type {
   ContentSnapshot,
   ContestEntry,
   ContestSnapshot,
+  ContestWinner,
   EditionRecord,
   ListedContest,
   ListedDump,
@@ -115,6 +116,30 @@ function layout(
       padding: 1rem 1.1rem;
     }
     .counts { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 0.95rem; }
+    .copy { white-space: pre-wrap; color: var(--muted); }
+    .winners {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0.75rem;
+    }
+    .winner {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+    }
+    .winner .place { margin: 0; font-weight: 600; }
+    .winner .meta { margin: 0.35rem 0 0; }
+    .user-id {
+      display: block;
+      margin: 0.35rem 0 0;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+    }
     .gallery { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
     figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     figure img { width: 100%; aspect-ratio: 520 / 720; object-fit: cover; display: block; background: #0d0f14; }
@@ -336,10 +361,25 @@ export function renderContentDump(
   })
 }
 
+function winnerList(winners: ContestWinner[]): string {
+  if (winners.length === 0) {
+    return ''
+  }
+  const items = winners.map((winner) => `<li class="winner">
+      <p class="place">Place ${winner.place}</p>
+      <p class="user-id">${escapeHtml(winner.userId)}</p>
+      <p class="meta">${escapeHtml(formatContestScore(winner.score))} · Award ${winner.reward}</p>
+    </li>`).join('')
+  return `<section>
+    <h2>Winners</h2>
+    <ol class="winners">${items}</ol>
+  </section>`
+}
+
 function contestTile(entry: ContestEntry, label: string): string {
   const caption = `${entry.code} · E${entry.edition} · P${entry.number}`
   const submitter = entry.submitter
-    ? `<span>User ID: ${escapeHtml(entry.submitter)}</span>`
+    ? `<span class="user-id">${escapeHtml(entry.submitter)}</span>`
     : ''
   return `<figure>
     <img src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(label)}"${entry.imageUrl ? '' : ' hidden'}>
@@ -376,14 +416,7 @@ export function renderContestDump(
   snapshot: ContestSnapshot,
   slug: string | null
 ): string {
-  const winners = snapshot.winners.length === 0
-    ? ''
-    : `<section>
-        <h2>Winners</h2>
-        <ul class="series-list">${snapshot.winners.map((winner) =>
-          `<li>Place ${winner.place}: user ${escapeHtml(winner.userId)}, score ${escapeHtml(formatContestScore(winner.score))}, award ${winner.reward}</li>`
-        ).join('')}</ul>
-      </section>`
+  const winners = winnerList(snapshot.winners)
   const reference = snapshot.reference
     ? `<section>
         <h2>Reference card</h2>
@@ -396,13 +429,13 @@ export function renderContestDump(
       contestTile(row, `#${index + 1} · ${formatContestScore(row.score)}`)
     ).join('')}</div>`
 
-  const description = entryDescription(snapshot.entries.length)
+  const entryLine = entryDescription(snapshot.entries.length)
   const body = `
-    <p class="meta">${escapeHtml(description)}</p>
+    <p class="meta">${escapeHtml(entryLine)}</p>
     ${dumpByline(createdAt, slug)}
     <section>
-      <h2>Prompt</h2>
-      <p class="meta" style="white-space:pre-wrap">${escapeHtml(snapshot.prompt || '(No prompt)')}</p>
+      <h2>Description</h2>
+      <p class="copy">${escapeHtml(snapshot.description || '(No description).')}</p>
     </section>
     ${winners}
     ${reference}
@@ -412,7 +445,7 @@ export function renderContestDump(
       ${gallery}
     </section>
   `
-  return layout(`Card Hunt #${snapshot.eventCounter}`, body, { description })
+  return layout(`Card Hunt #${snapshot.eventCounter}`, body, { description: entryLine })
 }
 
 export function renderNotFound(): string {

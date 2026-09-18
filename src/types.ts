@@ -95,7 +95,7 @@ export type ContestSnapshot = {
   kind: typeof CONTEST_KIND
   contestName: string
   eventCounter: number
-  prompt: string
+  description: string
   judgingFinishedAt: number | null
   buyInPrice: number | null
   currency: string | null

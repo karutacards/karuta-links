@@ -5,8 +5,10 @@ import {
   formatContestScore,
   nextPollAction,
   parentEventCounter,
-  parseContestEntry
+  parseContestEntry,
+  readContestSnapshot
 } from './contest'
+import { CONTEST_KIND } from './types'
 import { contestImageUrl } from './images'
 
 function entry(partial: Partial<ReturnType<typeof parseContestEntry>> & { cardId: string; score: number }) {
@@ -97,5 +99,24 @@ describe('contest snapshot', () => {
     expect(snapshot.entries[0]?.imageUrl).toBe(contestImageUrl(12, 'card-a'))
     expect(snapshot.reference?.imageUrl).toBe(contestImageUrl(12, 'reference'))
     expect(snapshot.winners[0]?.place).toBe(1)
+    expect(snapshot.description).toBe('Find the gold frame.')
+  })
+
+  it('reads a stored snapshot that still uses prompt', () => {
+    const snapshot = readContestSnapshot(JSON.stringify({
+      kind: CONTEST_KIND,
+      contestName: 'card_hunt',
+      eventCounter: 1,
+      prompt: 'Old stored copy.',
+      judgingFinishedAt: null,
+      buyInPrice: null,
+      currency: null,
+      prizePool: null,
+      submissionCount: 0,
+      reference: null,
+      winners: [],
+      entries: []
+    }))
+    expect(snapshot.description).toBe('Old stored copy.')
   })
 })

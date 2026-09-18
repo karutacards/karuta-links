@@ -1,3 +1,4 @@
+import { readContestSnapshot } from './contest'
 import { generateSlug } from './slug'
 import {
   CARD_HUNT_NAME,
@@ -144,7 +145,7 @@ export async function getContestDocument(
 
   return {
     createdAt: document.created_at,
-    snapshot: JSON.parse(document.payload) as ContestSnapshot,
+    snapshot: readContestSnapshot(document.payload),
     slug: document.slug
   }
 }
@@ -167,7 +168,7 @@ export async function listRecentContests(db: D1Database, limit = 50): Promise<Li
     id: row.id,
     createdAt: row.created_at,
     slug: row.slug,
-    snapshot: JSON.parse(row.payload) as ContestSnapshot
+    snapshot: readContestSnapshot(row.payload)
   }))
 }
 

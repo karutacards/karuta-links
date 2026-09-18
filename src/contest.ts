@@ -106,7 +106,7 @@ export function buildContestSnapshot(
     kind: CONTEST_KIND,
     contestName: CARD_HUNT_NAME,
     eventCounter,
-    prompt: asString(event.prompt),
+    description: asString(event.prompt),
     judgingFinishedAt: asNumber(event.judgingFinishedAt),
     buyInPrice: asNumber(event.buyInPrice),
     currency: asString(event.currency) || null,
@@ -115,6 +115,14 @@ export function buildContestSnapshot(
     reference: parseReference(event, eventCounter),
     winners,
     entries: parsed
+  }
+}
+
+export function readContestSnapshot(payload: string): ContestSnapshot {
+  const raw = JSON.parse(payload) as ContestSnapshot & { prompt?: string }
+  return {
+    ...raw,
+    description: raw.description || raw.prompt || ''
   }
 }
 

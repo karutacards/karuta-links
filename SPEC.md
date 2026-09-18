@@ -64,7 +64,7 @@ A Card Hunt dump is an immutable snapshot of one finished event. The Worker poll
 
 Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/characters/{key}-{edition}.jpg` for contest tiles.
 
-Public HTML shows the prompt, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries. The page description is the entry count. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
+Public HTML shows the description, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries. The page description is the entry count. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
 
 ## Ingest
 
