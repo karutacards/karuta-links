@@ -2,12 +2,14 @@ import { formatContestScore } from './contest'
 import { escapeHtml } from './escape'
 import { dumpCounts } from './ingest'
 import type {
+  CharacterAliasRecord,
   ContentSnapshot,
   ContestEntry,
   ContestSnapshot,
   EditionRecord,
   ListedContest,
   ListedDump,
+  SeriesAliasRecord,
   SeriesRecord
 } from './types'
 
@@ -121,6 +123,12 @@ function countLine(snapshot: ContentSnapshot): string {
       : '',
     counts.updatedEditions
       ? `${counts.updatedEditions} ${counts.updatedEditions === 1 ? 'character' : 'characters'} with updated editions`
+      : '',
+    counts.newSeriesAliases
+      ? `${counts.newSeriesAliases} series with new aliases`
+      : '',
+    counts.newCharacterAliases
+      ? `${counts.newCharacterAliases} ${counts.newCharacterAliases === 1 ? 'character' : 'characters'} with new aliases`
       : ''
   ].filter(Boolean)
   return parts.join(', ')
@@ -171,6 +179,29 @@ function characterNames(title: string, rows: { name: string; seriesName: string 
   </section>`
 }
 
+function aliasLine(name: string, aliases: string[]): string {
+  return `${escapeHtml(name)}: ${escapeHtml(aliases.join(', '))}`
+}
+
+function aliasLists(
+  seriesRows: SeriesAliasRecord[],
+  characterRows: CharacterAliasRecord[]
+): string {
+  if (seriesRows.length === 0 && characterRows.length === 0) {
+    return ''
+  }
+  const seriesItems = seriesRows
+    .map((row) => `<li>${aliasLine(row.name, row.aliases)}</li>`)
+    .join('')
+  const characterItems = characterRows
+    .map((row) => `<li>${aliasLine(`${row.name} (${row.seriesName})`, row.aliases)}</li>`)
+    .join('')
+  return `<section>
+    <h2>New aliases</h2>
+    <ul class="series-list">${seriesItems}${characterItems}</ul>
+  </section>`
+}
+
 export function renderHome(dumps: ListedDump[]): string {
   const body = dumps.length === 0
     ? '<p class="empty">No content dumps yet.</p>'
@@ -205,6 +236,7 @@ export function renderContentDump(
     ${seriesList('New series', snapshot.newSeries)}
     ${seriesList('Updated series', snapshot.updatedSeries)}
     ${characterNames('New characters', snapshot.newCharacters)}
+    ${aliasLists(snapshot.newSeriesAliases ?? [], snapshot.newCharacterAliases ?? [])}
     ${editionGallery('New editions', snapshot.newEditions)}
     ${editionGallery('Updated editions', snapshot.updatedEditions)}
   `

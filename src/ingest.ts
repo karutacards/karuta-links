@@ -1,10 +1,12 @@
-import { cardImageUrl } from './images'
+import { characterImageUrl } from './images'
 import {
   CONTENT_KIND,
+  type CharacterAliasRecord,
   type CharacterRecord,
   type ContentSnapshot,
   type EditionImage,
   type EditionRecord,
+  type SeriesAliasRecord,
   type SeriesRecord
 } from './types'
 
@@ -126,7 +128,7 @@ function parseEditionList(
       return {
         edition: parsed.edition,
         version: parsed.version,
-        imageUrl: cardImageUrl(key, parsed.edition, parsed.version)
+        imageUrl: characterImageUrl(key, parsed.edition, parsed.version)
       }
     })
     return {
@@ -136,6 +138,57 @@ function parseEditionList(
       seriesName: series.seriesName,
       editions
     }
+  })
+}
+
+function addedAliases(record: Record<string, unknown>): string[] {
+  const aliases = record.aliases
+  if (!aliases || typeof aliases !== 'object' || Array.isArray(aliases)) {
+    return []
+  }
+  const added = (aliases as Record<string, unknown>).added
+  if (!Array.isArray(added)) {
+    return []
+  }
+  return added
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .map((value) => value.trim())
+}
+
+function parseSeriesAliasList(value: unknown, label: string): SeriesAliasRecord[] {
+  return asOptionalArray(value, label).flatMap((entry, index) => {
+    const record = asRecord(entry, `${label}[${index}]`)
+    const aliases = addedAliases(record)
+    if (aliases.length === 0) {
+      return []
+    }
+    return [{
+      key: requiredString(record, 'key', `${label}[${index}]`),
+      name: requiredString(record, 'name', `${label}[${index}]`),
+      aliases
+    }]
+  })
+}
+
+function parseCharacterAliasList(
+  value: unknown,
+  label: string,
+  seriesByKey: Map<string, string>
+): CharacterAliasRecord[] {
+  return asOptionalArray(value, label).flatMap((entry, index) => {
+    const record = asRecord(entry, `${label}[${index}]`)
+    const aliases = addedAliases(record)
+    if (aliases.length === 0) {
+      return []
+    }
+    const series = seriesNameFor(record, seriesByKey, `${label}[${index}]`)
+    return [{
+      key: requiredString(record, 'key', `${label}[${index}]`),
+      name: requiredString(record, 'name', `${label}[${index}]`),
+      seriesKey: series.seriesKey,
+      seriesName: series.seriesName,
+      aliases
+    }]
   })
 }
 
@@ -152,6 +205,11 @@ export function parseContentSnapshot(body: unknown): ContentSnapshot {
     seriesByKey.set(series.key, series.name)
   }
 
+  const newSeriesAliases = parseSeriesAliasList(record.seriesChanges, 'seriesChanges')
+  for (const series of newSeriesAliases) {
+    seriesByKey.set(series.key, series.name)
+  }
+
   const snapshot: ContentSnapshot = {
     kind: CONTENT_KIND,
     environment,
@@ -159,18 +217,27 @@ export function parseContentSnapshot(body: unknown): ContentSnapshot {
     updatedSeries,
     newCharacters: parseCharacterList(record.newCharacters, 'newCharacters', seriesByKey),
     newEditions: parseEditionList(record.newEditions, 'newEditions', seriesByKey),
-    updatedEditions: parseEditionList(record.updatedEditions, 'updatedEditions', seriesByKey)
+    updatedEditions: parseEditionList(record.updatedEditions, 'updatedEditions', seriesByKey),
+    newSeriesAliases,
+    newCharacterAliases: parseCharacterAliasList(
+      record.characterChanges,
+      'characterChanges',
+      seriesByKey
+    )
   }
 
+  const counts = dumpCounts(snapshot)
   const count =
-    snapshot.newSeries.length +
-    snapshot.updatedSeries.length +
-    snapshot.newCharacters.length +
-    snapshot.newEditions.length +
-    snapshot.updatedEditions.length
+    counts.newSeries +
+    counts.updatedSeries +
+    counts.newCharacters +
+    counts.newEditions +
+    counts.updatedEditions +
+    counts.newSeriesAliases +
+    counts.newCharacterAliases
 
   if (count === 0) {
-    throw new IngestError('Payload must include at least one series, character or edition change')
+    throw new IngestError('Payload must include at least one series, character, edition or alias change')
   }
 
   return snapshot
@@ -182,12 +249,16 @@ export function dumpCounts(snapshot: ContentSnapshot): {
   newCharacters: number
   newEditions: number
   updatedEditions: number
+  newSeriesAliases: number
+  newCharacterAliases: number
 } {
   return {
     newSeries: snapshot.newSeries.length,
     updatedSeries: snapshot.updatedSeries.length,
     newCharacters: snapshot.newCharacters.length,
     newEditions: snapshot.newEditions.length,
-    updatedEditions: snapshot.updatedEditions.length
+    updatedEditions: snapshot.updatedEditions.length,
+    newSeriesAliases: snapshot.newSeriesAliases?.length ?? 0,
+    newCharacterAliases: snapshot.newCharacterAliases?.length ?? 0
   }
 }

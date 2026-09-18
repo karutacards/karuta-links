@@ -30,6 +30,20 @@ export type EditionRecord = {
   editions: EditionImage[]
 }
 
+export type SeriesAliasRecord = {
+  key: string
+  name: string
+  aliases: string[]
+}
+
+export type CharacterAliasRecord = {
+  key: string
+  name: string
+  seriesKey: string
+  seriesName: string
+  aliases: string[]
+}
+
 export type ContentSnapshot = {
   kind: typeof CONTENT_KIND
   environment: string
@@ -38,6 +52,8 @@ export type ContentSnapshot = {
   newCharacters: CharacterRecord[]
   newEditions: EditionRecord[]
   updatedEditions: EditionRecord[]
+  newSeriesAliases: SeriesAliasRecord[]
+  newCharacterAliases: CharacterAliasRecord[]
 }
 
 export type DocumentRow = {

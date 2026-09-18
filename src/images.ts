@@ -1,18 +1,27 @@
 export const UNCACHED_CDN = 'https://d29rfjkp84y49u.cloudfront.net'
 
-const IMAGE_KEY = /^(cards|thumbs)\/(?:versioned\/)?[^./][^/]*\.jpg$/
+const ORIGIN_KEY = /^(cards|thumbs)\/(?:versioned\/)?[^./][^/]*\.jpg$/
+const CHARACTER_PUBLIC = /^characters\/(?:versioned\/)?[^./][^/]*\.jpg$/
 const CONTEST_KEY = /^contests\/card_hunt\/[1-9][0-9]*\/[^/]+$/
 
-export function keyedImagePath(key: string, edition: string, version = 0): string {
+function encodedName(key: string, edition: string, version: number, folder: 'cards' | 'characters'): string {
   const name = encodeURIComponent(key)
   if (version > 0) {
-    return `cards/versioned/${name}-${edition}-${version}.jpg`
+    return `${folder}/versioned/${name}-${edition}-${version}.jpg`
   }
-  return `cards/${name}-${edition}.jpg`
+  return `${folder}/${name}-${edition}.jpg`
 }
 
-export function cardImageUrl(key: string, edition: string, version = 0): string {
-  return `/images/${keyedImagePath(key, edition, version)}`
+export function keyedImagePath(key: string, edition: string, version = 0): string {
+  return encodedName(key, edition, version, 'cards')
+}
+
+export function publicCharacterPath(key: string, edition: string, version = 0): string {
+  return encodedName(key, edition, version, 'characters')
+}
+
+export function characterImageUrl(key: string, edition: string, version = 0): string {
+  return `/images/${publicCharacterPath(key, edition, version)}`
 }
 
 export function originImageUrl(key: string, edition: string, version = 0): string {
@@ -27,8 +36,18 @@ export function contestImageUrl(eventCounter: number, cardId: string): string {
   return `/images/${contestImagePath(eventCounter, cardId)}`
 }
 
+export function originKeyFromImagePath(path: string): string | null {
+  if (CHARACTER_PUBLIC.test(path)) {
+    return `cards/${path.slice('characters/'.length)}`
+  }
+  if (ORIGIN_KEY.test(path)) {
+    return path
+  }
+  return null
+}
+
 export function isKeyedObjectPath(path: string): boolean {
-  return IMAGE_KEY.test(path)
+  return CHARACTER_PUBLIC.test(path) || ORIGIN_KEY.test(path)
 }
 
 export function isContestObjectPath(path: string): boolean {
@@ -92,23 +111,32 @@ export async function serveKeyedImage(bucket: R2Bucket, objectKey: string): Prom
       }
     })
   }
-  if (!isKeyedObjectPath(objectKey)) {
+  if (objectKey.startsWith('cards/') && ORIGIN_KEY.test(objectKey)) {
+    return new Response(null, {
+      status: 301,
+      headers: {
+        location: `/images/characters/${objectKey.slice('cards/'.length)}`
+      }
+    })
+  }
+  const originKey = originKeyFromImagePath(objectKey)
+  if (!originKey || !ORIGIN_KEY.test(originKey)) {
     return new Response('Not found', { status: 404 })
   }
-  let object = await bucket.get(objectKey)
+  let object = await bucket.get(originKey)
   if (!object) {
-    const origin = `${UNCACHED_CDN}/${objectKey}`
+    const origin = `${UNCACHED_CDN}/${originKey}`
     const response = await fetch(origin, { headers: { accept: 'image/jpeg' } })
     if (!response.ok || !response.body) {
       return new Response('Not found', { status: 404 })
     }
-    await bucket.put(objectKey, response.body, {
+    await bucket.put(originKey, response.body, {
       httpMetadata: {
         contentType: 'image/jpeg',
         cacheControl: 'public, max-age=31536000, immutable'
       }
     })
-    object = await bucket.get(objectKey)
+    object = await bucket.get(originKey)
   }
   if (!object) {
     return new Response('Not found', { status: 404 })

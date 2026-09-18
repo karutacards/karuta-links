@@ -9,6 +9,7 @@
 | [runbooks/deploy.md](runbooks/deploy.md) | Deploy and secrets |
 | [fixtures/sample-content.json](fixtures/sample-content.json) | Curl ingest fixture |
 | [handoff/karuta-admin-ingest.md](handoff/karuta-admin-ingest.md) | Later Admin POST contract |
+| [handoff/karuta-admin-publish-data.md](handoff/karuta-admin-publish-data.md) | Hard-publish series, character, edition and alias fields |
 | [handoff/discordcards.md](handoff/discordcards.md) | Bot handoff index |
 | [handoff/discordcards-contest-dump.md](handoff/discordcards-contest-dump.md) | Card Hunt poll recipe |
 

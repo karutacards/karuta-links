@@ -32,5 +32,23 @@
       "editions": [{ "edition": "2", "version": 1 }]
     }
   ],
-  "updatedEditions": []
+  "updatedEditions": [],
+  "seriesChanges": [
+    {
+      "key": "jujutsu-kaisen",
+      "name": "Jujutsu Kaisen",
+      "aliases": { "added": ["JJK"], "removed": [] },
+      "groups": { "added": ["shonen"], "removed": [] }
+    }
+  ],
+  "characterChanges": [
+    {
+      "key": "gojo-satoru",
+      "name": "Gojo Satoru",
+      "series": "jujutsu-kaisen",
+      "seriesName": "Jujutsu Kaisen",
+      "aliases": { "added": ["The Honored One"], "removed": [] },
+      "groups": { "added": ["staff"], "removed": [] }
+    }
+  ]
 }

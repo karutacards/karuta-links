@@ -1,6 +1,6 @@
 # Handoff: karuta-admin dump ingest
 
-Read-only against `J:\karuta-admin` until a later pass. This file is the implementer spec for the Admin POST. Do not treat it as permission to edit that tree.
+Admin `actionqueue` `1120fcc` already POSTs this contract on hard production publish. Harvest fields: [karuta-admin-publish-data.md](karuta-admin-publish-data.md). Do not treat this file as permission to keep editing that tree.
 
 ## Trigger
 
@@ -40,6 +40,8 @@ Log the dump id and counts when the POST fails. Do not fail the Karuta publish. 
 - Soft or silent dumps
 - Pointing the bot at keyed R2 objects
 
-Until this patch ships, dumps are created with the curl fixture in the krtacc repo.
+Admin `actionqueue` `1120fcc` POSTs this body after S3 and Redis on hard production publish. `seriesChanges` and `characterChanges` store `aliases.added` only. Groups and removed aliases are dropped. An alias-only publish is a valid dump.
+
+The bearer must live in Admin env, not source. If the value appears in git or chat, rotate `INGEST_TOKEN` on the Worker and send the new value out of band.
 
 *Written by Cursor*

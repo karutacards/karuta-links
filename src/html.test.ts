@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { formatApDate, renderContestDump } from './html'
-import { CONTEST_KIND } from './types'
+import { formatApDate, renderContentDump, renderContestDump } from './html'
+import { CONTENT_KIND, CONTEST_KIND } from './types'
 
 describe('formatApDate', () => {
   it('formats a UTC timestamp in AP style', () => {
@@ -42,5 +42,38 @@ describe('renderContestDump', () => {
     expect(page).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(page).not.toContain('<script>alert(1)</script>')
     expect(page).toContain('User ID: 99')
+  })
+})
+
+describe('renderContentDump', () => {
+  it('lists new aliases and omits groups', () => {
+    const page = renderContentDump(4, Date.UTC(2026, 8, 17, 12, 0), {
+      kind: CONTENT_KIND,
+      environment: 'production',
+      newSeries: [],
+      updatedSeries: [],
+      newCharacters: [],
+      newEditions: [],
+      updatedEditions: [],
+      newSeriesAliases: [{
+        key: 'jujutsu-kaisen',
+        name: 'Jujutsu Kaisen',
+        aliases: ['JJK']
+      }],
+      newCharacterAliases: [{
+        key: 'gojo-satoru',
+        name: 'Gojo Satoru',
+        seriesKey: 'jujutsu-kaisen',
+        seriesName: 'Jujutsu Kaisen',
+        aliases: ['The Honored One']
+      }]
+    }, null)
+
+    expect(page).toContain('New aliases')
+    expect(page).toContain('Jujutsu Kaisen: JJK')
+    expect(page).toContain('Gojo Satoru (Jujutsu Kaisen): The Honored One')
+    expect(page).not.toContain('shonen')
+    expect(page).toContain('1 series with new aliases')
+    expect(page).toContain('1 character with new aliases')
   })
 })

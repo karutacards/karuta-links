@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  cardImageUrl,
+  characterImageUrl,
   contestImagePath,
   contestImageUrl,
   isContestObjectPath,
   isKeyedObjectPath,
   keyedImagePath,
-  originImageUrl
+  originImageUrl,
+  originKeyFromImagePath,
+  publicCharacterPath
 } from './images'
 
 describe('keyed image paths', () => {
@@ -17,15 +19,25 @@ describe('keyed image paths', () => {
     )
   })
 
-  it('uses the versioned path when version is greater than zero', () => {
+  it('publishes character-art URLs under /images/characters', () => {
     expect(keyedImagePath('gojo-satoru', '8', 1)).toBe('cards/versioned/gojo-satoru-8-1.jpg')
-    expect(cardImageUrl('gojo-satoru', '8', 1)).toBe('/images/cards/versioned/gojo-satoru-8-1.jpg')
+    expect(publicCharacterPath('gojo-satoru', '8', 1)).toBe(
+      'characters/versioned/gojo-satoru-8-1.jpg'
+    )
+    expect(characterImageUrl('gojo-satoru', '8', 1)).toBe(
+      '/images/characters/versioned/gojo-satoru-8-1.jpg'
+    )
+    expect(originKeyFromImagePath('characters/gojo-satoru-1.jpg')).toBe(
+      'cards/gojo-satoru-1.jpg'
+    )
   })
 
   it('rejects traversal in the image route', () => {
+    expect(isKeyedObjectPath('characters/gojo-satoru-1.jpg')).toBe(true)
     expect(isKeyedObjectPath('cards/gojo-satoru-1.jpg')).toBe(true)
     expect(isKeyedObjectPath('../cards/x.jpg')).toBe(false)
     expect(isKeyedObjectPath('cards/../secret')).toBe(false)
+    expect(isKeyedObjectPath('characters/../secret')).toBe(false)
   })
 
   it('keeps framed contest cards off the character-art prefix', () => {

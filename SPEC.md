@@ -41,12 +41,14 @@ Unknown sections return 404.
 
 A dump is an immutable snapshot. Ingest stores same-origin image URLs. Those paths name character images (unframed edition art), not framed cards:
 
-- Version `0` or omitted: `/images/cards/{key}-{edition}.jpg`
-- Version greater than `0`: `/images/cards/versioned/{key}-{edition}-{version}.jpg`
+- Version `0` or omitted: `/images/characters/{key}-{edition}.jpg`
+- Version greater than `0`: `/images/characters/versioned/{key}-{edition}-{version}.jpg`
 
-Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. A miss on a character-art key fetches Karuta's uncached host `d29rfjkp84y49u.cloudfront.net` and stores the full JPEG. The Worker does not build thumbs.
+Those are unframed character edition images. Framed Card Hunt tiles use `/images/contests/…`. A request to `/images/cards/…` 301s to the matching `/images/characters/…` path.
 
-Public HTML shows names, series, editions and images. It does not scrape live production data.
+Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. Character-art objects stay at Karuta's `cards/…` keys in R2 and on the uncached host `d29rfjkp84y49u.cloudfront.net`. A miss fetches that origin and stores the full JPEG. The Worker does not build thumbs.
+
+Public HTML shows names, series, new aliases, editions and images. It does not show groups. It does not scrape live production data.
 
 ## Contest dumps
 
@@ -60,7 +62,7 @@ A Card Hunt dump is an immutable snapshot of one finished event. The Worker poll
 6. Copy framed-card images from the saved URLs into `karuta-images` at `contests/card_hunt/{eventCounter}/{card_id}`.
 7. Store the snapshot and a slug. Canonical path is `/contests/{id}`.
 
-Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/cards/{key}-{edition}.jpg` for contest tiles.
+Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/characters/{key}-{edition}.jpg` for contest tiles.
 
 Public HTML shows the prompt, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries.
 
@@ -74,10 +76,13 @@ The JSON body may include:
 - `newSeries`, `updatedSeries`: `{ key, name }`
 - `newCharacters`: `{ key, name, series, seriesName? }`
 - `newEditions`, `updatedEditions`: `{ key, name, series, seriesName?, editions }`
+- `seriesChanges`, `characterChanges`: Admin metadata diffs. Only `aliases.added` is stored. `groups` and `aliases.removed` are ignored.
 
 `editions` is a non-empty array of edition numbers or `{ edition, version? }` objects. `seriesName` may be omitted when the same payload includes that series key in `newSeries` or `updatedSeries`.
 
-The payload must contain at least one change. Maximum body size is 1,000,000 bytes.
+The payload must contain at least one series, character, edition or added-alias change. Maximum body size is 1,000,000 bytes.
+
+Public HTML lists new series, updated series names, new characters, new aliases and edition galleries. It does not show groups. `updatedSeries` is the current name only. Admin does not send the previous name or a character-rename list.
 
 A successful response is `201` with `section`, `id`, `slug`, `path`, `shortPath`, `url` and `shortUrl`. Absolute URLs use the request host.
 
@@ -87,14 +92,16 @@ Contest dumps are not ingested over HTTP.
 
 ## Visibility
 
-Pages are public. Content-dump writes require the ingest token. Soft and silent Karuta publishes are out of scope until Admin is wired.
+Pages are public. Content-dump writes require the ingest token. A hard production publish from karuta-admin POSTs a dump. Soft and silent publishes skip that POST.
+
+The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 
 ## Non-goals
 
-- Karuta Admin or Discord webhook integration
+- Discord embed short URL
 - `k!schedule` changes
-- Custom domain attachment
 - Historical backfill of contests that ended before the first poll
 - Accounts
 - A public hostname on `karuta-images` (`img.krta.cc` is out)
 - A bot POST for contest dumps
+- Soft or silent dumps
