@@ -59,7 +59,7 @@ A Card Hunt dump is an immutable snapshot of one finished event. The Worker poll
 3. Read `contests/card_hunt/events/{eventCounter}`.
 4. If `rewarded` is not true, stop. Keep the last-dumped number unchanged.
 5. List `contests/card_hunt/events/{eventCounter}/contest_entries/{card_id}`.
-6. Copy framed-card images from the saved URLs into `karuta-images` at `contests/card_hunt/{eventCounter}/{card_id}`.
+6. Copy framed-card images from the saved URLs into `karuta-images` at `contests/card/{eventCounter}/{place}`. The reference card is `contests/card/{eventCounter}/ref`. Contest images are immutable snapshots. Responses send a one-year `Cache-Control` and `CDN-Cache-Control` and are stored in the Workers Cache API.
 7. Store the snapshot and a slug. Canonical path is `/contests/{id}`.
 
 Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/characters/{key}-{edition}.jpg` for contest tiles.

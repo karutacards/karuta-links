@@ -3,6 +3,7 @@ import {
   characterImageUrl,
   contestImagePath,
   contestImageUrl,
+  legacyContestImagePath,
   isContestObjectPath,
   isKeyedObjectPath,
   keyedImagePath,
@@ -41,10 +42,18 @@ describe('keyed image paths', () => {
   })
 
   it('keeps framed contest cards off the character-art prefix', () => {
-    expect(contestImagePath(12, 'ab-cd')).toBe('contests/card_hunt/12/ab-cd')
-    expect(contestImageUrl(12, 'ab-cd')).toBe('/images/contests/card_hunt/12/ab-cd')
-    expect(isContestObjectPath('contests/card_hunt/12/ab-cd')).toBe(true)
-    expect(isContestObjectPath('contests/card_hunt/12/../secret')).toBe(false)
-    expect(isKeyedObjectPath('contests/card_hunt/12/ab-cd')).toBe(false)
+    expect(contestImagePath(12, 3)).toBe('contests/card/12/3')
+    expect(contestImageUrl(12, 3)).toBe('/images/contests/card/12/3')
+    expect(contestImagePath(12, 'ref')).toBe('contests/card/12/ref')
+    expect(isContestObjectPath('contests/card/12/3')).toBe(true)
+    expect(isContestObjectPath('contests/card/12/ref')).toBe(true)
+    expect(isContestObjectPath('contests/card/12/0')).toBe(false)
+    expect(isContestObjectPath('contests/card_hunt/12/ab-cd')).toBe(false)
+    expect(isContestObjectPath('contests/card/12/../secret')).toBe(false)
+    expect(isKeyedObjectPath('contests/card/12/3')).toBe(false)
+    expect(legacyContestImagePath(1, 'ichika-nakano:4:12741')).toEqual([
+      'contests/card_hunt/1/ichika-nakano%3A4%3A12741',
+      'contests/card_hunt/1/ichika-nakano:4:12741'
+    ])
   })
 })

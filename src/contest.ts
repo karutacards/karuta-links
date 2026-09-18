@@ -1,4 +1,10 @@
-import { contestImagePath, contestImageUrl, copyContestImage } from './images'
+import {
+  contestImagePath,
+  contestImageUrl,
+  copyContestImage,
+  promoteLegacyContestImage,
+  type ContestImageSlot
+} from './images'
 import { CARD_HUNT_NAME, CONTEST_KIND, type ContestEntry, type ContestSnapshot, type ContestWinner } from './types'
 
 export const CONTEST_MAX_SCORE = 1300
@@ -63,7 +69,7 @@ export function parseContestEntry(
     submitter: asString(data.contestSubmitter),
     submittedAt: asNumber(data.contestSubmittedAt) ?? Number.POSITIVE_INFINITY,
     score,
-    imageUrl: contestImageUrl(eventCounter, cardId),
+    imageUrl: '',
     sourceUrl
   }
 }
@@ -86,7 +92,7 @@ function parseReference(
     submitter: '',
     submittedAt: 0,
     score: asNumber(event.referenceScore) ?? -1,
-    imageUrl: contestImageUrl(eventCounter, 'reference'),
+    imageUrl: contestImageUrl(eventCounter, 'ref'),
     sourceUrl
   }
 }
@@ -102,7 +108,7 @@ export function buildContestSnapshot(
     ? event.winners.map(parseWinner).filter((row): row is ContestWinner => row !== null)
     : []
   winners.sort((a, b) => a.place - b.place)
-  return {
+  return assignContestImageUrls({
     kind: CONTEST_KIND,
     contestName: CARD_HUNT_NAME,
     eventCounter,
@@ -115,29 +121,49 @@ export function buildContestSnapshot(
     reference: parseReference(event, eventCounter),
     winners,
     entries: parsed
+  })
+}
+
+export function assignContestImageUrls(snapshot: ContestSnapshot): ContestSnapshot {
+  if (snapshot.reference) {
+    snapshot.reference.imageUrl = contestImageUrl(snapshot.eventCounter, 'ref')
   }
+  snapshot.entries.forEach((row, index) => {
+    row.imageUrl = contestImageUrl(snapshot.eventCounter, index + 1)
+  })
+  return snapshot
 }
 
 export function readContestSnapshot(payload: string): ContestSnapshot {
   const raw = JSON.parse(payload) as ContestSnapshot & { prompt?: string }
-  return {
+  return assignContestImageUrls({
     ...raw,
     description: raw.description || raw.prompt || ''
-  }
+  })
 }
 
 export async function copySnapshotImages(
   bucket: R2Bucket,
   snapshot: ContestSnapshot
 ): Promise<void> {
-  const cards = [
-    ...(snapshot.reference ? [snapshot.reference] : []),
-    ...snapshot.entries
+  const cards: Array<{ cardId: string; sourceUrl: string | null; slot: ContestImageSlot }> = [
+    ...(snapshot.reference
+      ? [{ cardId: snapshot.reference.cardId, sourceUrl: snapshot.reference.sourceUrl, slot: 'ref' as const }]
+      : []),
+    ...snapshot.entries.map((card, index) => ({
+      cardId: card.cardId,
+      sourceUrl: card.sourceUrl,
+      slot: index + 1
+    }))
   ]
   for (const card of cards) {
-    if (!card.sourceUrl) continue
+    const objectKey = contestImagePath(snapshot.eventCounter, card.slot)
     try {
-      await copyContestImage(bucket, contestImagePath(snapshot.eventCounter, card.cardId), card.sourceUrl)
+      if (await promoteLegacyContestImage(bucket, snapshot.eventCounter, card.cardId, objectKey)) {
+        continue
+      }
+      if (!card.sourceUrl) continue
+      await copyContestImage(bucket, objectKey, card.sourceUrl)
     } catch {
       // The page still renders; a later GET cannot recover a missing framed-card URL.
     }

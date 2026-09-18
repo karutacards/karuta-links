@@ -6,7 +6,8 @@ import {
   copySnapshotImages,
   type ContestSource
 } from './contest'
-import { insertContestDump, lastDumpedEvent } from './db'
+import { insertContestDump, lastDumpedEvent, listRecentContests } from './db'
+import { contestImagePath } from './images'
 import { getFirestoreDocument, listFirestoreDocuments } from './firestore'
 import { CARD_HUNT_NAME } from './types'
 
@@ -45,6 +46,15 @@ export async function pollCardHunt(
   const event = eventCounter === null ? null : await source.getEvent(eventCounter)
   const action = nextPollAction(last, eventCounter, eventIsRewarded(event))
   if (action !== 'dump' || eventCounter === null || !event) {
+    if (env.IMAGES && last >= 1) {
+      const latest = (await listRecentContests(env.DB, 1))[0]?.snapshot
+      if (latest && latest.entries.length > 0) {
+        const probe = await env.IMAGES.head(contestImagePath(latest.eventCounter, 1))
+        if (!probe) {
+          await copySnapshotImages(env.IMAGES, latest)
+        }
+      }
+    }
     return action === 'waiting' ? 'waiting' : 'skipped'
   }
 

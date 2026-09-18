@@ -1,8 +1,9 @@
 export const UNCACHED_CDN = 'https://d29rfjkp84y49u.cloudfront.net'
+export const CONTEST_IMAGE_CACHE_CONTROL = 'public, max-age=31536000, s-maxage=31536000, immutable'
 
 const ORIGIN_KEY = /^(cards|thumbs)\/(?:versioned\/)?[^./][^/]*\.jpg$/
 const CHARACTER_PUBLIC = /^characters\/(?:versioned\/)?[^./][^/]*\.jpg$/
-const CONTEST_KEY = /^contests\/card_hunt\/[1-9][0-9]*\/[^/]+$/
+const CONTEST_KEY = /^contests\/card\/[1-9][0-9]*\/(?:[1-9][0-9]*|ref)$/
 
 function encodedName(key: string, edition: string, version: number, folder: 'cards' | 'characters'): string {
   const name = encodeURIComponent(key)
@@ -28,12 +29,14 @@ export function originImageUrl(key: string, edition: string, version = 0): strin
   return `${UNCACHED_CDN}/${keyedImagePath(key, edition, version)}`
 }
 
-export function contestImagePath(eventCounter: number, cardId: string): string {
-  return `contests/card_hunt/${eventCounter}/${encodeURIComponent(cardId)}`
+export type ContestImageSlot = number | 'ref'
+
+export function contestImagePath(eventCounter: number, slot: ContestImageSlot): string {
+  return `contests/card/${eventCounter}/${slot}`
 }
 
-export function contestImageUrl(eventCounter: number, cardId: string): string {
-  return `/images/${contestImagePath(eventCounter, cardId)}`
+export function contestImageUrl(eventCounter: number, slot: ContestImageSlot): string {
+  return `/images/${contestImagePath(eventCounter, slot)}`
 }
 
 export function originKeyFromImagePath(path: string): string | null {
@@ -77,6 +80,35 @@ export async function ensureKeyedFull(
   return true
 }
 
+export function legacyContestImagePath(eventCounter: number, cardId: string): string[] {
+  return [
+    `contests/card_hunt/${eventCounter}/${encodeURIComponent(cardId)}`,
+    `contests/card_hunt/${eventCounter}/${cardId}`
+  ]
+}
+
+export async function promoteLegacyContestImage(
+  bucket: R2Bucket,
+  eventCounter: number,
+  cardId: string,
+  objectKey: string
+): Promise<boolean> {
+  if (!isContestObjectPath(objectKey)) return false
+  if (await bucket.head(objectKey)) return true
+  for (const oldKey of legacyContestImagePath(eventCounter, cardId)) {
+    const object = await bucket.get(oldKey)
+    if (!object?.body) continue
+    await bucket.put(objectKey, object.body, {
+      httpMetadata: object.httpMetadata ?? {
+        contentType: 'image/jpeg',
+        cacheControl: CONTEST_IMAGE_CACHE_CONTROL
+      }
+    })
+    return true
+  }
+  return false
+}
+
 export async function copyContestImage(
   bucket: R2Bucket,
   objectKey: string,
@@ -91,25 +123,50 @@ export async function copyContestImage(
   await bucket.put(objectKey, response.body, {
     httpMetadata: {
       contentType,
-      cacheControl: 'public, max-age=31536000, immutable'
+      cacheControl: CONTEST_IMAGE_CACHE_CONTROL
     }
   })
   return true
 }
 
-export async function serveKeyedImage(bucket: R2Bucket, objectKey: string): Promise<Response> {
-  if (isContestObjectPath(objectKey)) {
-    const object = await bucket.get(objectKey)
-    if (!object) {
-      return new Response('Not found', { status: 404 })
+async function serveContestImage(
+  bucket: R2Bucket,
+  objectKey: string,
+  requestUrl?: string
+): Promise<Response> {
+  const cache = caches.default
+  const cacheKey = requestUrl ? new Request(requestUrl, { method: 'GET' }) : null
+  if (cacheKey) {
+    const hit = await cache.match(cacheKey)
+    if (hit) {
+      return hit
     }
-    return new Response(object.body, {
-      headers: {
-        'content-type': object.httpMetadata?.contentType || 'image/jpeg',
-        'cache-control': 'public, max-age=31536000, immutable',
-        'x-content-type-options': 'nosniff'
-      }
-    })
+  }
+  const object = await bucket.get(objectKey)
+  if (!object) {
+    return new Response('Not found', { status: 404 })
+  }
+  const response = new Response(object.body, {
+    headers: {
+      'content-type': object.httpMetadata?.contentType || 'image/jpeg',
+      'cache-control': CONTEST_IMAGE_CACHE_CONTROL,
+      'cdn-cache-control': CONTEST_IMAGE_CACHE_CONTROL,
+      'x-content-type-options': 'nosniff'
+    }
+  })
+  if (cacheKey) {
+    await cache.put(cacheKey, response.clone())
+  }
+  return response
+}
+
+export async function serveKeyedImage(
+  bucket: R2Bucket,
+  objectKey: string,
+  requestUrl?: string
+): Promise<Response> {
+  if (isContestObjectPath(objectKey)) {
+    return serveContestImage(bucket, objectKey, requestUrl)
   }
   if (objectKey.startsWith('cards/') && ORIGIN_KEY.test(objectKey)) {
     return new Response(null, {

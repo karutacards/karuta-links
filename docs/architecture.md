@@ -22,7 +22,7 @@ Tables: `sequences`, `documents`, `slugs`, `contest_dumps`. A dump is an immutab
 
 Content-dump HTML uses same-origin `/images/cards/…` paths. Those objects are unframed edition art. The Worker reads private R2 `karuta-images` and falls back to Karuta's uncached CloudFront host on a miss.
 
-Contest HTML uses `/images/contests/card_hunt/{event}/{cardId}`. Those objects are framed cards copied from the URLs saved on the Firestore entries. A miss does not fall back to character-art CloudFront.
+Contest HTML uses `/images/contests/card/{event}/{place}`. The reference card is `/images/contests/card/{event}/ref`. Those objects are framed cards copied from the URLs saved on the Firestore entries. A miss does not fall back to character-art CloudFront. Contest image responses are cached for one year at the browser and the Cloudflare edge. They do not change after the dump.
 
 ## Card Hunt poll
 

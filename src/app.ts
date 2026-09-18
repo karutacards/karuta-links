@@ -97,7 +97,7 @@ app.get('/images/*', async (c) => {
   if (!c.env.IMAGES) {
     return new Response('Not found', { status: 404 })
   }
-  return serveKeyedImage(c.env.IMAGES, objectKey)
+  return serveKeyedImage(c.env.IMAGES, objectKey, c.req.url)
 })
 
 app.get('/contests', async (c) => {

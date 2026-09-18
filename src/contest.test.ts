@@ -96,8 +96,9 @@ describe('contest snapshot', () => {
 
     expect(snapshot.eventCounter).toBe(12)
     expect(snapshot.entries.map((row) => row.cardId)).toEqual(['card-a', 'card-b'])
-    expect(snapshot.entries[0]?.imageUrl).toBe(contestImageUrl(12, 'card-a'))
-    expect(snapshot.reference?.imageUrl).toBe(contestImageUrl(12, 'reference'))
+    expect(snapshot.entries[0]?.imageUrl).toBe(contestImageUrl(12, 1))
+    expect(snapshot.entries[1]?.imageUrl).toBe(contestImageUrl(12, 2))
+    expect(snapshot.reference?.imageUrl).toBe(contestImageUrl(12, 'ref'))
     expect(snapshot.winners[0]?.place).toBe(1)
     expect(snapshot.description).toBe('Find the gold frame.')
   })
@@ -118,5 +119,48 @@ describe('contest snapshot', () => {
       entries: []
     }))
     expect(snapshot.description).toBe('Old stored copy.')
+  })
+
+  it('rewrites stored image URLs to place slots', () => {
+    const snapshot = readContestSnapshot(JSON.stringify({
+      kind: CONTEST_KIND,
+      contestName: 'card_hunt',
+      eventCounter: 1,
+      description: 'Hunt.',
+      judgingFinishedAt: null,
+      buyInPrice: null,
+      currency: null,
+      prizePool: null,
+      submissionCount: 1,
+      reference: {
+        cardId: 'reference',
+        code: 'AAAAA',
+        edition: '1',
+        number: '1',
+        characterKey: '',
+        seriesKey: '',
+        submitter: '',
+        submittedAt: 0,
+        score: 900,
+        imageUrl: '/images/contests/card_hunt/1/reference',
+        sourceUrl: null
+      },
+      winners: [],
+      entries: [{
+        cardId: 'ichika-nakano:4:12741',
+        code: 'ABCDE',
+        edition: '4',
+        number: '12741',
+        characterKey: '',
+        seriesKey: '',
+        submitter: '1',
+        submittedAt: 1,
+        score: 800,
+        imageUrl: '/images/contests/card_hunt/1/ichika-nakano%3A4%3A12741',
+        sourceUrl: null
+      }]
+    }))
+    expect(snapshot.reference?.imageUrl).toBe(contestImageUrl(1, 'ref'))
+    expect(snapshot.entries[0]?.imageUrl).toBe(contestImageUrl(1, 1))
   })
 })

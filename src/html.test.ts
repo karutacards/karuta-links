@@ -49,7 +49,7 @@ describe('renderContestDump', () => {
         submitter: '99',
         submittedAt: 1,
         score: 1300,
-        imageUrl: '/images/contests/card_hunt/3/ab',
+        imageUrl: '/images/contests/card/3/1',
         sourceUrl: null
       }]
     }, 'abc123')
