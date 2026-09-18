@@ -142,6 +142,15 @@ function layout(
     }
     .gallery { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
     figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    figure.place-1 {
+      box-shadow: 0 0 0 2px #f5c51a, 0 0 28px 6px rgba(245, 197, 26, 0.55);
+    }
+    figure.place-2 {
+      box-shadow: 0 0 0 2px #c9cdd4, 0 0 28px 6px rgba(201, 205, 212, 0.45);
+    }
+    figure.place-3 {
+      box-shadow: 0 0 0 2px #c47e32, 0 0 28px 6px rgba(196, 126, 50, 0.5);
+    }
     figure img { width: 100%; aspect-ratio: 520 / 720; object-fit: cover; display: block; background: #0d0f14; }
     figcaption { padding: 0.7rem 0.8rem 0.9rem; font-size: 0.92rem; }
     figcaption strong { display: block; }
@@ -318,7 +327,7 @@ function draftCards(dumps: ListedDump[]): string {
     const href = dump.slug ? `/${dump.slug}` : `/content/${dump.id}`
     return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
-        <h3><a href="${escapeHtml(href)}">Content draft ${dump.id}</a></h3>
+        <h3><a href="${escapeHtml(href)}">Content draft #${dump.id}</a></h3>
         <p class="counts">${escapeHtml(countDescription(dump.snapshot))}</p>
       </article>`
   }).join('')}</div>`
@@ -374,7 +383,7 @@ export function renderContentDump(
     ${editionGallery('New editions', snapshot.newEditions)}
     ${editionGallery('Updated editions', snapshot.updatedEditions)}
   `
-  return layout(`Content draft ${id}`, body, {
+  return layout(`Content draft #${id}`, body, {
     description: description || undefined,
     environment
   })
@@ -395,12 +404,26 @@ function winnerList(winners: ContestWinner[]): string {
   </section>`
 }
 
-function contestTile(entry: ContestEntry, label: string): string {
+function medalPlace(index: number): 1 | 2 | 3 | null {
+  if (index === 0) {
+    return 1
+  }
+  if (index === 1) {
+    return 2
+  }
+  if (index === 2) {
+    return 3
+  }
+  return null
+}
+
+function contestTile(entry: ContestEntry, label: string, place: 1 | 2 | 3 | null = null): string {
   const caption = `${entry.code} · E${entry.edition} · P${entry.number}`
   const submitter = entry.submitter
     ? `<span class="user-id">${escapeHtml(entry.submitter)}</span>`
     : ''
-  return `<figure>
+  const placeClass = place ? ` class="place-${place}"` : ''
+  return `<figure${placeClass}>
     <img src="${escapeHtml(entry.imageUrl)}" alt="${escapeHtml(label)}"${entry.imageUrl ? '' : ' hidden'}>
     <figcaption>
       <strong>${escapeHtml(label)}</strong>
@@ -435,7 +458,7 @@ export function renderContestDump(
   snapshot: ContestSnapshot,
   slug: string | null
 ): string {
-  const winners = winnerList(snapshot.winners)
+  // const winners = winnerList(snapshot.winners)
   const reference = snapshot.reference
     ? `<section>
         <h2>Reference card</h2>
@@ -445,7 +468,7 @@ export function renderContestDump(
   const gallery = snapshot.entries.length === 0
     ? '<p class="empty">No entries.</p>'
     : `<div class="gallery">${snapshot.entries.map((row, index) =>
-      contestTile(row, `#${index + 1} · ${formatContestScore(row.score)}`)
+      contestTile(row, `#${index + 1} · ${formatContestScore(row.score)}`, medalPlace(index))
     ).join('')}</div>`
 
   const entryLine = contestDescription(snapshot)
@@ -456,7 +479,6 @@ export function renderContestDump(
       <h2>Description</h2>
       <p class="copy">${escapeHtml(snapshot.description || '(No description).')}</p>
     </section>
-    ${winners}
     ${reference}
     <section>
       <h2>Results</h2>

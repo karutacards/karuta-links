@@ -60,8 +60,9 @@ describe('renderContestDump', () => {
     expect(page).not.toContain('Prompt')
     expect(page).not.toContain('prompt')
     expect(page).toContain('class="user-id">99</span>')
-    expect(page).toContain('class="user-id">11</p>')
-    expect(page).toContain('class="winners"')
+    expect(page).toContain('class="place-1"')
+    expect(page).not.toContain('<h2>Winners</h2>')
+    expect(page).not.toContain('class="user-id">11</p>')
     expect(page).not.toContain('class="series-list"')
     expect(page).not.toContain('User ID:')
     expect(page).toContain('<p class="meta">3 winners, 1 entry. 100 gold entry fee, 500 gold prize pool.</p>')
@@ -116,7 +117,7 @@ describe('renderHome', () => {
     expect(page).toContain('content="Dumps of published drafts and contest results."')
     expect(page).toContain('Content drafts')
     expect(page).toContain('Contest results')
-    expect(page).toContain('Content draft 1')
+    expect(page).toContain('Content draft #1')
     expect(page).toContain('No contest results yet.')
     expect(page).not.toContain('Official')
     expect(page).not.toContain('Content dumps')
@@ -147,6 +148,7 @@ describe('renderContentDump', () => {
       }]
     }, 'abcd12')
 
+    expect(page).toContain('<title>Content draft #4</title>')
     expect(page).toContain('New aliases')
     expect(page).toContain('Jujutsu Kaisen: JJK')
     expect(page).toContain('Gojo Satoru (Jujutsu Kaisen): The Honored One')
