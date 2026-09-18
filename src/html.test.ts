@@ -157,7 +157,7 @@ describe('renderContentDump', () => {
       newCharacterAliases: []
     }, null)
 
-    expect(page).toContain('class="environment">development</p>')
+    expect(page).toContain('class="environment">Development</p>')
     expect(page).not.toContain('Environment: development')
   })
 })

@@ -313,7 +313,7 @@ export function renderContentDump(
 ): string {
   const description = countLine(snapshot)
   const environment = snapshot.environment !== 'production'
-    ? snapshot.environment
+    ? `${snapshot.environment.charAt(0).toUpperCase()}${snapshot.environment.slice(1)}`
     : undefined
   const body = `
     ${description ? `<p class="meta">${escapeHtml(description)}</p>` : ''}
