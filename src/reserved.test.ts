@@ -5,6 +5,7 @@ describe('reserved segments', () => {
   it('treats known first segments as reserved', () => {
     expect(isReservedSegment('content')).toBe(true)
     expect(isReservedSegment('contests')).toBe(true)
+    expect(isReservedSegment('drafts')).toBe(true)
     expect(isReservedSegment('images')).toBe(true)
     expect(isReservedSegment('API')).toBe(true)
     expect(isReservedSegment('health')).toBe(true)

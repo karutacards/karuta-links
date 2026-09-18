@@ -5,6 +5,7 @@ import {
   newSession,
   parseCookies,
   presentSecret,
+  safeDraftNext,
   signSession,
   verifySession
 } from './session'
@@ -12,6 +13,14 @@ import {
 const SECRET = 'test-session-secret'
 
 describe('session', () => {
+  it('accepts only draft return paths', () => {
+    expect(safeDraftNext('/drafts/import')).toBe('/drafts/import')
+    expect(safeDraftNext('/drafts/12')).toBe('/drafts/12')
+    expect(safeDraftNext('/drafts/01')).toBeNull()
+    expect(safeDraftNext('/')).toBeNull()
+    expect(safeDraftNext('https://evil.example/')).toBeNull()
+  })
+
   it('treats empty secrets as missing', () => {
     expect(presentSecret(undefined)).toBe(false)
     expect(presentSecret('')).toBe(false)

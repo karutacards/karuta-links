@@ -3,6 +3,7 @@ export const RESERVED_SEGMENTS = [
   'assets',
   'content',
   'contests',
+  'drafts',
   'favicon.ico',
   'health',
   'images',

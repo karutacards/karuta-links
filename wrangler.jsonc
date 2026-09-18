@@ -27,6 +27,10 @@
     {
       "binding": "IMAGES",
       "bucket_name": "karuta-images"
+    },
+    {
+      "binding": "KARUTA_DATA",
+      "bucket_name": "karuta-data"
     }
   ]
 }

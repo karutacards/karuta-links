@@ -8,6 +8,8 @@ describe('classifyPath', () => {
     expect(classifyPath('/robots.txt')).toEqual({ type: 'robots' })
     expect(classifyPath('/api/v1/content')).toEqual({ type: 'ingest' })
     expect(classifyPath('/contests')).toEqual({ type: 'contestHome' })
+    expect(classifyPath('/drafts/import')).toEqual({ type: 'draftImport' })
+    expect(classifyPath('/drafts/4')).toEqual({ type: 'draft', id: 4 })
   })
 
   it('routes canonical content dumps', () => {

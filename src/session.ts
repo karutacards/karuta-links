@@ -1,7 +1,9 @@
 export const SESSION_COOKIE = 'session'
 export const STATE_COOKIE = 'oauth_state'
+export const NEXT_COOKIE = 'oauth_next'
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 30
 export const STATE_MAX_AGE = 300
+export const NEXT_MAX_AGE = 600
 
 export interface Session {
   discordId: string
@@ -139,6 +141,27 @@ export function createStateCookie(state: string, https: boolean): string {
 
 export function clearStateCookie(https: boolean): string {
   return `${STATE_COOKIE}=; ${cookieFlags(https, 0)}`
+}
+
+export function safeDraftNext(raw: string | null): string | null {
+  if (!raw) {
+    return null
+  }
+  if (raw === '/drafts/import') {
+    return raw
+  }
+  if (/^\/drafts\/[1-9][0-9]*$/.test(raw)) {
+    return raw
+  }
+  return null
+}
+
+export function createNextCookie(path: string, https: boolean): string {
+  return `${NEXT_COOKIE}=${encodeURIComponent(path)}; ${cookieFlags(https, NEXT_MAX_AGE)}`
+}
+
+export function clearNextCookie(https: boolean): string {
+  return `${NEXT_COOKIE}=; ${cookieFlags(https, 0)}`
 }
 
 export async function getSession(

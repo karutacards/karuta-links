@@ -23,9 +23,17 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/content/{id}` | Canonical content dump. `{id}` is a positive integer with no leading zeros |
 | `/contests` | Contest results (Card Hunt), newest first |
 | `/contests/{id}` | Canonical contest dump. `{id}` is a positive integer with no leading zeros |
+| `/drafts/import` | OAuth-gated importer handshake. Accepts a catalog via `postMessage` |
+| `/drafts/{id}` | OAuth-gated collaborative draft editor |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
-| `/api/auth/discord` | Start Discord identify. No login control on public HTML |
+| `/api/v1/drafts` | Create a draft from a text catalog (`POST` only) |
+| `/api/v1/drafts/{id}` | Read a draft (`GET`) |
+| `/api/v1/drafts/{id}/entities` | One entity mutation (`PATCH`) |
+| `/api/v1/drafts/{id}/entities/{type}/{key}/audit` | Entity audit rows |
+| `/api/v1/drafts/{id}/lock` | Lock a draft (`POST`, lock list only) |
+| `/api/v1/drafts/{id}/export.csv` | Importer CSV for a locked draft (lock list only) |
+| `/api/auth/discord` | Start Discord identify. Optional `next` is `/drafts/import` or `/drafts/{id}` |
 | `/api/auth/callback` | Exchange the authorization code and set a session cookie |
 | `/api/auth/me` | Session probe. `{ authenticated: false }` or `{ authenticated: true, discordId, username }` |
 | `/api/auth/logout` | Clear the session cookie (`POST` only) |
@@ -33,11 +41,11 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/health` | Plain `ok` |
 | `/robots.txt` | Allow all |
 
-Reserved first segments: `api`, `assets`, `content`, `contests`, `favicon.ico`, `health`, `images`, `robots.txt`, `static`. Those names never become slugs.
+Reserved first segments: `api`, `assets`, `content`, `contests`, `drafts`, `favicon.ico`, `health`, `images`, `robots.txt`, `static`. Those names never become slugs.
 
 Slugs are exactly six characters in `[a-z0-9]`. They point only at internal `/{section}/{id}` paths. There are no open redirects.
 
-IDs increment per section. `content/1` and `contests/1` are independent.
+IDs increment per section. `content/1`, `contests/1` and `drafts/1` are independent.
 
 Unknown sections return 404.
 
@@ -98,7 +106,27 @@ Contest dumps are not ingested over HTTP.
 
 Pages are public. Content-dump writes require the ingest token. A hard production publish from karuta-admin POSTs a dump. Soft and silent publishes skip that POST.
 
-Discord OAuth can issue a signed session cookie (`identify` only). It does not gate dumps, ingest or any public HTML. There is no Sign in control. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
+Discord OAuth can issue a signed session cookie (`identify` only). It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes require a session. A missing cookie starts OAuth and returns to `/drafts/import` or `/drafts/{id}`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
+
+## Collaborative drafts
+
+Drafts are versioned catalog entities, not a live shared document. Public content dumps stay immutable.
+
+`drafts.config.json` is the access file. Discord snowflakes are identifiers, not secrets. Changing it requires a deploy.
+
+`access` is one of:
+
+- `open` — every signed-in user who is not Karuta-blacklisted
+- `credentials` — not blacklisted, and at least one configured bar (default: 1,000 drops, 1,000 grabs or one `k!gems` purchase)
+- `whitelist` — only IDs in `whitelist`
+
+Every mode checks `blacklist.json.gz` on R2 `karuta-data`. Credentials mode reads `statistics_user/{discordId}` from Firestore. Failed access is `403` with a complete sentence that does not name the failed bar. A missing blacklist or Firestore config fails closed with `503`.
+
+IDs in `lockIds` can lock a draft. Locked drafts reject edits with `423` and can be exported as importer CSV columns `type,action,name,seriesKey,aliases`. Groups, editions and images stay out.
+
+Each series or character has a revision. A save sends the revision it started from. A conflict or a delete-while-edit returns `409` with `CONFLICT` or `ENTITY_GONE` plus the current entity. The editor reloads that row. There are no row locks that last while a tab is open.
+
+The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/drafts/import` and `postMessage` from `https://karuta.gswaccess.com`. The import page POSTs `/api/v1/drafts` with the session cookie. It does not use `INGEST_TOKEN`.
 
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 

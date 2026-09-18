@@ -1,0 +1,10 @@
+{
+  "access": "credentials",
+  "whitelist": [],
+  "lockIds": ["141431182792458241"],
+  "credentials": {
+    "minDrops": 1000,
+    "minGrabs": 1000,
+    "minPurchases": 1
+  }
+}

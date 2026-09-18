@@ -31,3 +31,5 @@ Apply new migrations with `pnpm run db:migrate:remote` before or with the deploy
 ## Rollback
 
 Use `pnpm exec wrangler rollback` for the Worker. D1 migrations are not automatically reversed.
+
+Draft access lives in `drafts.config.json`. Apply `0003_drafts.sql` before the Worker version that reads those tables. The Worker also binds R2 `karuta-data` as `KARUTA_DATA` for the Karuta blacklist.

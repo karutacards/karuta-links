@@ -1,7 +1,9 @@
 import type { Hono } from 'hono'
 import {
+  clearNextCookie,
   clearSessionCookie,
   clearStateCookie,
+  createNextCookie,
   createSessionCookie,
   createStateCookie,
   getSession,
@@ -9,6 +11,8 @@ import {
   newSession,
   parseCookies,
   presentSecret,
+  safeDraftNext,
+  NEXT_COOKIE,
   STATE_COOKIE
 } from './session'
 
@@ -132,9 +136,12 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
     }
     const state = crypto.randomUUID()
     const https = isHttps(url)
-    return redirect(authorizeUrl(c.env.DISCORD_CLIENT_ID, redirectUri, state), [
-      createStateCookie(state, https)
-    ])
+    const next = safeDraftNext(url.searchParams.get('next'))
+    const cookies = [createStateCookie(state, https)]
+    if (next) {
+      cookies.push(createNextCookie(next, https))
+    }
+    return redirect(authorizeUrl(c.env.DISCORD_CLIENT_ID, redirectUri, state), cookies)
   })
 
   app.get('/api/auth/callback', async (c) => {
@@ -173,7 +180,8 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
       c.env.SESSION_SECRET,
       https
     )
-    return redirect('/', [sessionCookie, clearStateCookie(https)])
+    const next = safeDraftNext(cookies[NEXT_COOKIE]) ?? '/'
+    return redirect(next, [sessionCookie, clearStateCookie(https), clearNextCookie(https)])
   })
 
   app.get('/api/auth/me', async (c) => {

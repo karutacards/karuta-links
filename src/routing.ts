@@ -34,10 +34,20 @@ export function classifyPath(pathname: string): Route {
   if (path === '/contests') {
     return { type: 'contestHome' }
   }
+  if (path === '/drafts/import') {
+    return { type: 'draftImport' }
+  }
 
   const segments = path.slice(1).split('/')
   if (segments.length === 2) {
     const [section, rawId] = segments
+    if (section === 'drafts') {
+      const id = rawId ? parsePositiveInt(rawId) : null
+      if (id === null) {
+        return { type: 'notFound' }
+      }
+      return { type: 'draft', id }
+    }
     if (!section || (section !== 'content' && section !== 'contests')) {
       return { type: 'notFound' }
     }
@@ -71,6 +81,10 @@ export function describeRoute(route: Route): string {
       return 'ingest'
     case 'contestHome':
       return 'contestHome'
+    case 'draftImport':
+      return 'draftImport'
+    case 'draft':
+      return `drafts/${route.id}`
     case 'document':
       return `${route.section}/${route.id}`
     case 'slug':

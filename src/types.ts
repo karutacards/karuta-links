@@ -136,6 +136,8 @@ export type Route =
   | { type: 'robots' }
   | { type: 'ingest' }
   | { type: 'contestHome' }
+  | { type: 'draftImport' }
+  | { type: 'draft'; id: number }
   | { type: 'document'; section: string; id: number }
   | { type: 'slug'; slug: string }
   | { type: 'notFound' }
