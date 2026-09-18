@@ -10,9 +10,10 @@ Production names are `karuta-links` for the Worker and the D1 database. `wrangle
 4. Apply migrations: `pnpm run db:migrate:remote`.
 5. Set the ingest secret: `pnpm exec wrangler secret put INGEST_TOKEN`.
 6. Set Firestore secrets for the Card Hunt poll: `FIRESTORE_PROJECT_ID` and `FIRESTORE_SERVICE_ACCOUNT`. Use a read-only service account. Do not print the JSON.
-7. Confirm `wrangler.jsonc` binds R2 `karuta-images` as `IMAGES`.
-8. Apply `0002_contest_dumps.sql` with `pnpm run db:migrate:remote`.
-9. Deploy: `pnpm run deploy`.
+7. Optional Discord OAuth: `pnpm exec wrangler secret put DISCORD_CLIENT_ID`, then `DISCORD_CLIENT_SECRET`, then `SESSION_SECRET`. Register `https://krta.cc/api/auth/callback` on that Discord application. Do not reuse karuta.cards secrets. Leave these unset if OAuth should stay dark.
+8. Confirm `wrangler.jsonc` binds R2 `karuta-images` as `IMAGES`.
+9. Apply `0002_contest_dumps.sql` with `pnpm run db:migrate:remote`.
+10. Deploy: `pnpm run deploy`.
 
 Do not pass the secret value on the command line.
 

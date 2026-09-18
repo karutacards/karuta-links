@@ -25,6 +25,10 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/contests/{id}` | Canonical contest dump. `{id}` is a positive integer with no leading zeros |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
+| `/api/auth/discord` | Start Discord identify. No login control on public HTML |
+| `/api/auth/callback` | Exchange the authorization code and set a session cookie |
+| `/api/auth/me` | Session probe. `{ authenticated: false }` or `{ authenticated: true, discordId, username }` |
+| `/api/auth/logout` | Clear the session cookie (`POST` only) |
 | `/images/…` | Image from `karuta-images`. Character-art keys fall back to CloudFront on a miss. Contest keys do not |
 | `/health` | Plain `ok` |
 | `/robots.txt` | Allow all |
@@ -94,6 +98,8 @@ Contest dumps are not ingested over HTTP.
 
 Pages are public. Content-dump writes require the ingest token. A hard production publish from karuta-admin POSTs a dump. Soft and silent publishes skip that POST.
 
+Discord OAuth can issue a signed session cookie (`identify` only). It does not gate dumps, ingest or any public HTML. There is no Sign in control. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
+
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 
 ## Non-goals
@@ -101,7 +107,7 @@ The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 - Discord embed short URL
 - `k!schedule` changes
 - Historical backfill of contests that ended before the first poll
-- Accounts
+- Login UI and player accounts
 - A public hostname on `karuta-images` (`img.krta.cc` is out)
 - A bot POST for contest dumps
 - Soft or silent dumps

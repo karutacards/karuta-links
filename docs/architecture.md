@@ -9,6 +9,7 @@ GET  /contests        <--  recent Card Hunt dumps
 GET  /contests/{id}   <--  contest snapshot HTML
 GET  /{slug}          -->  302 /{section}/{id}
 GET  /                <--  recent content dumps
+GET  /api/auth/*      -->  Discord identify (unadvertised)
 cron * * * * *        -->  Firestore poll, then D1 + R2
 ```
 
@@ -31,6 +32,8 @@ Every minute the Worker reads `contests/card_hunt`. If `eventCounter` is greater
 ## Auth
 
 `INGEST_TOKEN` is a Worker secret for content ingest. Local development reads `.dev.vars`. Public routes do not require auth. Contest dumps are not ingested over HTTP.
+
+Discord identify is wired and unadvertised. Start and callback routes live under `/api/auth`. A signed session cookie is issued when the Discord application credentials and a session signing key are set. Missing credentials return `503` on those two routes. `GET /api/auth/me` reports the cookie. `POST /api/auth/logout` clears it. Dumps stay public. There is no login control on HTML.
 
 ## Rendering
 

@@ -4,9 +4,12 @@ import { getContestDocument, getDocument, insertContentDump, listRecentContests,
 import { renderContentDump, renderContestDump, renderContestHome, renderHome, renderNotFound } from './html'
 import { IngestError, MAX_INGEST_BYTES, parseContentSnapshot } from './ingest'
 import { ensureSnapshotImages, serveKeyedImage } from './images'
+import { registerOAuth } from './oauth'
 import { CONTENT_SECTION } from './types'
 
 export const app = new Hono<{ Bindings: Env }>()
+
+registerOAuth(app)
 
 function html(body: string, status = 200): Response {
   return new Response(body, {
