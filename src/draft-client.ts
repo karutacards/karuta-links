@@ -5,19 +5,11 @@ function showStatus(el, message, isError) {
   el.textContent = message || '';
   el.className = 'banner ' + (isError ? 'error' : 'ok');
 }
-function field(labelText, name) {
-  return '<label class="' + name + '">' + labelText +
-    '<input data-field="' + name + '" value="" autocomplete="off"></label>';
-}
 function aliasEditorHtml() {
-  return '<fieldset class="aliases">' +
-    '<legend>Aliases</legend>' +
+  return '<div class="aliases">' +
     '<ul class="alias-list" data-alias-list></ul>' +
-    '<div class="alias-add">' +
-      '<label>New alias <input data-alias-input autocomplete="off"></label>' +
-      '<button type="button" data-alias-add>Add alias</button>' +
-    '</div>' +
-  '</fieldset>';
+    '<input data-alias-input aria-label="Add alias" autocomplete="off">' +
+  '</div>';
 }
 function aliasKey(value) {
   return String(value || '').trim().toLowerCase();
@@ -36,7 +28,7 @@ function collectAliases(root) {
   });
   return values;
 }
-function addAliasChip(list, raw, status) {
+function addAliasChip(list, raw, status, removable) {
   var alias = String(raw || '').trim();
   if (!alias) return false;
   if (alias.indexOf('|') !== -1) {
@@ -49,15 +41,27 @@ function addAliasChip(list, raw, status) {
   });
   if (exists) return false;
   var item = document.createElement('li');
-  var label = document.createElement('span');
-  label.setAttribute('data-alias', alias);
-  label.textContent = alias;
-  var remove = document.createElement('button');
-  remove.type = 'button';
-  remove.setAttribute('data-alias-remove', '1');
-  remove.setAttribute('aria-label', 'Remove alias ' + alias);
-  remove.textContent = 'Remove';
-  item.append(label, remove);
+  if (removable === false) {
+    item.className = 'alias-chip';
+    item.setAttribute('data-alias', alias);
+    item.textContent = alias;
+    list.append(item);
+    return true;
+  }
+  var chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'alias-chip';
+  chip.setAttribute('data-alias', alias);
+  chip.setAttribute('data-alias-remove', '1');
+  chip.setAttribute('aria-label', 'Remove alias ' + alias);
+  var text = document.createElement('span');
+  text.textContent = alias;
+  var mark = document.createElement('span');
+  mark.className = 'alias-x';
+  mark.setAttribute('aria-hidden', 'true');
+  mark.textContent = '\u00d7';
+  chip.append(text, mark);
+  item.append(chip);
   list.append(item);
   return true;
 }
@@ -67,44 +71,63 @@ function lockPendingAlias(root, status) {
   if (!input || !list || !input.value.trim()) return;
   if (addAliasChip(list, input.value, status)) input.value = '';
 }
+function discordHandle(name) {
+  var raw = String(name || '').trim();
+  if (!raw) return '';
+  return raw.charAt(0) === '@' ? raw : '@' + raw;
+}
+function mentionNode(name) {
+  var span = document.createElement('span');
+  span.className = 'mention';
+  span.textContent = discordHandle(name);
+  return span;
+}
+function fillLastEdited(root, name) {
+  var line = root.querySelector('[data-last-edit]');
+  if (!line) return;
+  line.replaceChildren();
+  if (!name) {
+    line.textContent = 'No edits yet.';
+    return;
+  }
+  line.append(mentionNode(name));
+}
 function entityRow(entity, locked) {
-  var wrap = document.createElement('article');
+  var wrap = document.createElement('tr');
   wrap.className = 'row';
   wrap.dataset.type = entity.type;
   wrap.dataset.key = entity.key;
   wrap.dataset.revision = String(entity.revision);
   var historyId = 'audit-' + entity.type + '-' + entity.key;
-  var chip = entity.lastEditorName
-    ? '<button type="button" class="chip" data-audit="1" aria-expanded="false" aria-controls="' + historyId + '"></button>'
-    : '<span class="meta">No edits yet.</span>';
-  var editor = locked ? '' : (
-    '<div class="fields">' +
-      field('Name', 'name') +
-      (entity.type === 'character' ? field('Series key', 'seriesKey') : '') +
-      aliasEditorHtml() +
-      '<div class="actions">' +
-        '<button type="button" data-save="1">Save</button>' +
-        '<button type="button" class="danger" data-delete="1">Delete</button>' +
-      '</div>' +
-    '</div>'
-  );
+  var historyBtn = entity.lastEditorName
+    ? '<button type="button" class="quiet" data-audit="1" aria-expanded="false" aria-controls="' + historyId + '">History</button>'
+    : '';
+  var nameCell = locked
+    ? '<td class="name"></td>'
+    : '<td class="name"><input data-field="name" aria-label="Name" autocomplete="off"></td>';
+  var seriesCell = entity.type === 'character'
+    ? (locked
+      ? '<td class="series"></td>'
+      : '<td class="series"><input data-field="seriesKey" aria-label="Series key" autocomplete="off"></td>')
+    : '';
+  var aliasCell = locked
+    ? '<td><div class="aliases"><ul class="alias-list" data-alias-list></ul></div></td>'
+    : '<td>' + aliasEditorHtml() + '</td>';
+  var acts = locked
+    ? '<td class="acts">' + historyBtn + '</td>'
+    : '<td class="acts">' + historyBtn + '<button type="button" data-save="1">Save</button><button type="button" class="danger" data-delete="1">Delete</button></td>';
   wrap.innerHTML =
-    '<div class="row-head">' +
-      '<span class="kind"></span>' +
-      chip +
-    '</div>' +
-    editor +
-    (locked ? '<p class="copy" data-locked-name></p>' : '') +
-    '<ol class="audit" id="' + historyId + '" hidden data-history="1"></ol>';
-  wrap.querySelector('.kind').textContent = (entity.type === 'series' ? 'Series' : 'Character') + ' · ' + entity.name;
-  var chipBtn = wrap.querySelector('[data-audit]');
-  if (chipBtn) chipBtn.textContent = 'History, last edited by ' + entity.lastEditorName;
-  var lockedName = wrap.querySelector('[data-locked-name]');
-  if (lockedName) {
-    lockedName.textContent = entity.aliases.length
-      ? 'Aliases: ' + entity.aliases.join(', ')
-      : 'No aliases.';
+    nameCell +
+    seriesCell +
+    aliasCell +
+    '<td class="edited"><span data-last-edit></span><ol class="audit" id="' + historyId + '" hidden data-history="1"></ol></td>' +
+    acts;
+  if (locked) {
+    wrap.querySelector('.name').textContent = entity.name;
+    var seriesCellEl = wrap.querySelector('.series');
+    if (seriesCellEl) seriesCellEl.textContent = entity.seriesKey || '';
   }
+  fillLastEdited(wrap, entity.lastEditorName);
   var nameInput = wrap.querySelector('[data-field="name"]');
   if (nameInput) nameInput.value = entity.name;
   var seriesInput = wrap.querySelector('[data-field="seriesKey"]');
@@ -112,17 +135,20 @@ function entityRow(entity, locked) {
   var aliasList = wrap.querySelector('[data-alias-list]');
   if (aliasList) {
     entity.aliases.forEach(function (alias) {
-      addAliasChip(aliasList, alias);
+      addAliasChip(aliasList, alias, null, !locked);
     });
   }
   return wrap;
 }
-function emptyState(list, label) {
+function emptyState(list, label, cols) {
   if (list.children.length) return;
-  var p = document.createElement('p');
-  p.className = 'empty';
-  p.textContent = 'No ' + label + ' yet.';
-  list.append(p);
+  var tr = document.createElement('tr');
+  var td = document.createElement('td');
+  td.colSpan = cols;
+  td.className = 'empty';
+  td.textContent = 'No ' + label + ' yet.';
+  tr.append(td);
+  list.append(tr);
 }
 async function api(path, options) {
   var response = await fetch(path, Object.assign({
@@ -138,22 +164,26 @@ window.krtaDraftEditor = function () {
   var status = document.getElementById('draft-status');
   if (!dataEl) return;
   var state = JSON.parse(dataEl.textContent || '{}');
+  var addSeriesRow = document.getElementById('add-series-card');
+  var addCharacterRow = document.getElementById('add-character-card');
   function render() {
     var seriesList = document.getElementById('series-list');
     var characterList = document.getElementById('character-list');
     if (seriesList) {
       seriesList.replaceChildren();
+      if (addSeriesRow && !state.locked) seriesList.append(addSeriesRow);
       state.series.forEach(function (entity) {
         seriesList.append(entityRow(entity, state.locked));
       });
-      emptyState(seriesList, 'series');
+      if (!state.series.length && state.locked) emptyState(seriesList, 'series', 4);
     }
     if (characterList) {
       characterList.replaceChildren();
+      if (addCharacterRow && !state.locked) characterList.append(addCharacterRow);
       state.characters.forEach(function (entity) {
         characterList.append(entityRow(entity, state.locked));
       });
-      emptyState(characterList, 'characters');
+      if (!state.characters.length && state.locked) emptyState(characterList, 'characters', 5);
     }
   }
   function replaceEntity(entity) {
@@ -202,8 +232,9 @@ window.krtaDraftEditor = function () {
       if (box) lockPendingAlias(box, status);
       return;
     }
-    if (target.dataset.aliasRemove) {
-      var aliasItem = target.closest('li');
+    var aliasChip = target.closest('[data-alias-remove]');
+    if (aliasChip) {
+      var aliasItem = aliasChip.closest('li');
       if (aliasItem) aliasItem.remove();
       return;
     }
@@ -241,7 +272,8 @@ window.krtaDraftEditor = function () {
       }
       audit.body.entries.forEach(function (entry) {
         var item = document.createElement('li');
-        item.textContent = entry.username + ' ' + entry.action + ' at ' + entry.createdAt + '.';
+        item.append(mentionNode(entry.username));
+        item.append(document.createTextNode(' ' + entry.action + ' at ' + entry.createdAt + '.'));
         history.append(item);
       });
       return;

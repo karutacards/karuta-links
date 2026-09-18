@@ -128,7 +128,7 @@ Each series or character has a revision. A save sends the revision it started fr
 
 The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/drafts/import` and `postMessage` from `https://karuta.gswaccess.com`. The import page POSTs `/api/v1/drafts` with the session cookie. It does not use `INGEST_TOKEN`.
 
-Draft HTML is a standalone editor. It does not use dump page chrome, a home link or a footer. Fields have visible labels. The layout is a single column on small viewports.
+Draft HTML is a standalone dark editor. It does not use dump page chrome, a home link or a footer. Series and characters are tables. The first row of each table adds an entity. Alias chips remove on click. Enter locks a new alias. Last edited is a column of Discord mentions. History opens that row's audit.
 
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 
