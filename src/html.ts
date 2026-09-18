@@ -321,13 +321,13 @@ function aliasLists(
 
 function draftCards(dumps: ListedDump[]): string {
   if (dumps.length === 0) {
-    return '<p class="empty">No content drafts yet.</p>'
+    return '<p class="empty">No content updates yet.</p>'
   }
   return `<div class="list">${dumps.map((dump) => {
     const href = dump.slug ? `/${dump.slug}` : `/content/${dump.id}`
     return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
-        <h3><a href="${escapeHtml(href)}">Content draft #${dump.id}</a></h3>
+        <h3><a href="${escapeHtml(href)}">Content update #${dump.id}</a></h3>
         <p class="counts">${escapeHtml(countDescription(dump.snapshot))}</p>
       </article>`
   }).join('')}</div>`
@@ -350,16 +350,16 @@ function resultCards(dumps: ListedContest[]): string {
 export function renderHome(drafts: ListedDump[], results: ListedContest[]): string {
   return layout(
     'Karuta dumps',
-    `<p class="meta">Dumps of published drafts and contest results.</p>
+    `<p class="meta">Dumps of content updates and contest results.</p>
     <section>
-      <h2>Content drafts</h2>
+      <h2>Content updates</h2>
       ${draftCards(drafts)}
     </section>
     <section>
       <h2>Contest results</h2>
       ${resultCards(results)}
     </section>`,
-    { description: 'Dumps of published drafts and contest results.' }
+    { description: 'Dumps of content updates and contest results.' }
   )
 }
 
@@ -383,7 +383,7 @@ export function renderContentDump(
     ${editionGallery('New editions', snapshot.newEditions)}
     ${editionGallery('Updated editions', snapshot.updatedEditions)}
   `
-  return layout(`Content draft #${id}`, body, {
+  return layout(`Content update #${id}`, body, {
     description: description || undefined,
     environment
   })
@@ -482,7 +482,7 @@ export function renderContestDump(
     ${reference}
     <section>
       <h2>Results</h2>
-      <p class="meta">Highest score first.</p>
+      <p class="meta">Highest score first. Ties go to the earliest submission.</p>
       ${gallery}
     </section>
   `

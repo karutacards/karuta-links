@@ -60,6 +60,7 @@ describe('renderContestDump', () => {
     expect(page).not.toContain('Prompt')
     expect(page).not.toContain('prompt')
     expect(page).toContain('class="user-id">99</span>')
+    expect(page).toContain('Highest score first. Ties go to the earliest submission.')
     expect(page).toContain('class="place-1"')
     expect(page).not.toContain('<h2>Winners</h2>')
     expect(page).not.toContain('class="user-id">11</p>')
@@ -95,7 +96,7 @@ describe('renderContestDump', () => {
 })
 
 describe('renderHome', () => {
-  it('lists content drafts and contest results under Karuta dumps', () => {
+  it('lists content updates and contest results under Karuta dumps', () => {
     const page = renderHome([{
       id: 1,
       createdAt: Date.UTC(2026, 8, 17, 12, 0),
@@ -114,10 +115,10 @@ describe('renderHome', () => {
     }], [])
 
     expect(page).toContain('<title>Karuta dumps</title>')
-    expect(page).toContain('content="Dumps of published drafts and contest results."')
-    expect(page).toContain('Content drafts')
+    expect(page).toContain('content="Dumps of content updates and contest results."')
+    expect(page).toContain('Content updates')
     expect(page).toContain('Contest results')
-    expect(page).toContain('Content draft #1')
+    expect(page).toContain('Content update #1')
     expect(page).toContain('No contest results yet.')
     expect(page).not.toContain('Official')
     expect(page).not.toContain('Content dumps')
@@ -148,7 +149,7 @@ describe('renderContentDump', () => {
       }]
     }, 'abcd12')
 
-    expect(page).toContain('<title>Content draft #4</title>')
+    expect(page).toContain('<title>Content update #4</title>')
     expect(page).toContain('New aliases')
     expect(page).toContain('Jujutsu Kaisen: JJK')
     expect(page).toContain('Gojo Satoru (Jujutsu Kaisen): The Honored One')

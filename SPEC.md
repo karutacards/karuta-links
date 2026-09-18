@@ -4,7 +4,7 @@ This file is the source of truth for implemented behavior. If code and prose dis
 
 ## Purpose
 
-krta.cc stores Karuta dumps that do not present well in Discord. Sections are incrementally ID'd content drafts and Card Hunt contest results.
+krta.cc stores Karuta dumps that do not present well in Discord. Sections are incrementally ID'd content updates and Card Hunt contest results.
 
 ## Names
 
@@ -19,7 +19,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 
 | Path | Behavior |
 | --- | --- |
-| `/` | Karuta dumps: content drafts and contest results, newest first |
+| `/` | Karuta dumps: content updates and contest results, newest first |
 | `/content/{id}` | Canonical content dump. `{id}` is a positive integer with no leading zeros |
 | `/contests` | Contest results (Card Hunt), newest first |
 | `/contests/{id}` | Canonical contest dump. `{id}` is a positive integer with no leading zeros |
@@ -64,7 +64,7 @@ A Card Hunt dump is an immutable snapshot of one finished event. The Worker poll
 
 Do not dump older events than the first `eventCounter` seen after deploy. Do not call Gemini. Do not re-render cards. Do not use character-art `/images/characters/{key}-{edition}.jpg` for contest tiles.
 
-Public HTML shows the description, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries. The page description is the winner count, entry count, entry fee and prize pool. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
+Public HTML shows the description, winners, reference card and ranked entries with framed-card images. Submitter Discord ids are on the entries. Entries are ranked by highest score, then earliest submission. The page description is the winner count, entry count, entry fee and prize pool. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
 
 ## Ingest
 
