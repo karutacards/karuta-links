@@ -108,9 +108,56 @@ describe('renderContentDump', () => {
     expect(page).toContain('Jujutsu Kaisen: JJK')
     expect(page).toContain('Gojo Satoru (Jujutsu Kaisen): The Honored One')
     expect(page).not.toContain('shonen')
-    expect(page).toContain('1 series with new aliases, 1 character with new aliases.')
-    expect(page).toContain('content="1 series with new aliases, 1 character with new aliases."')
+    expect(page).toContain('1 series with new aliases, 1 character with new aliases')
+    expect(page).not.toContain('1 series with new aliases, 1 character with new aliases.')
+    expect(page).toContain('content="1 series with new aliases, 1 character with new aliases"')
     expect(page).toContain('>krta.cc/abcd12</a>')
     expect(page).not.toContain('Short URL:')
+  })
+
+  it('puts the edition on its own line under the series', () => {
+    const page = renderContentDump(5, Date.UTC(2026, 8, 17, 12, 0), {
+      kind: CONTENT_KIND,
+      environment: 'production',
+      newSeries: [],
+      updatedSeries: [],
+      newCharacters: [],
+      newEditions: [{
+        key: 'neji-hyuuga',
+        name: 'Neji Hyuuga',
+        seriesKey: 'naruto',
+        seriesName: 'Naruto',
+        editions: [{
+          edition: '5',
+          version: 0,
+          imageUrl: '/images/characters/neji-hyuuga-5.jpg'
+        }]
+      }],
+      updatedEditions: [],
+      newSeriesAliases: [],
+      newCharacterAliases: []
+    }, null)
+
+    expect(page).toContain('class="series">Naruto</span>')
+    expect(page).toContain('class="edition">Edition 5</span>')
+    expect(page).not.toContain('Naruto · Edition 5')
+    expect(page).not.toContain('class="environment"')
+  })
+
+  it('puts a non-production environment in the header', () => {
+    const page = renderContentDump(6, Date.UTC(2026, 8, 17, 12, 0), {
+      kind: CONTENT_KIND,
+      environment: 'development',
+      newSeries: [],
+      updatedSeries: [],
+      newCharacters: [],
+      newEditions: [],
+      updatedEditions: [],
+      newSeriesAliases: [],
+      newCharacterAliases: []
+    }, null)
+
+    expect(page).toContain('class="environment">development</p>')
+    expect(page).not.toContain('Environment: development')
   })
 })

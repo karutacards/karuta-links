@@ -46,12 +46,20 @@ export function formatApDate(ms: number): string {
   return `${month} ${day}, ${year}, ${hours}:${minutes} ${period} UTC`
 }
 
-function layout(title: string, body: string, description?: string): string {
+function layout(
+  title: string,
+  body: string,
+  options: { description?: string; environment?: string } = {}
+): string {
+  const { description, environment } = options
   const descriptionTags = description
     ? `
   <meta name="description" content="${escapeHtml(description)}">
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">`
+    : ''
+  const environmentMark = environment
+    ? `<p class="environment">${escapeHtml(environment)}</p>`
     : ''
   return `<!doctype html>
 <html lang="en">
@@ -79,7 +87,21 @@ function layout(title: string, body: string, description?: string): string {
     }
     a { color: var(--accent); }
     header, main, footer { width: min(1100px, calc(100% - 2rem)); margin: 0 auto; }
-    header { padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--line); }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1.5rem 0 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    header .brand { min-width: 0; }
+    header .brand h1 { margin: 0.35rem 0 0; }
+    header .environment {
+      margin: 0;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+    }
     header p, .meta, footer { color: var(--muted); }
     h1, h2, h3 { font-weight: 600; letter-spacing: 0.01em; }
     main { padding: 1.5rem 0 4rem; }
@@ -98,6 +120,14 @@ function layout(title: string, body: string, description?: string): string {
     figure img { width: 100%; aspect-ratio: 520 / 720; object-fit: cover; display: block; background: #0d0f14; }
     figcaption { padding: 0.7rem 0.8rem 0.9rem; font-size: 0.92rem; }
     figcaption strong { display: block; }
+    figcaption .series { display: block; color: var(--muted); }
+    figcaption .edition {
+      display: block;
+      margin-top: 0.45rem;
+      color: var(--accent);
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+    }
     .series-list { columns: 2; gap: 1.5rem; }
     @media (max-width: 720px) { .series-list { columns: 1; } }
     .series-list li { break-inside: avoid; margin: 0 0 0.35rem; }
@@ -107,8 +137,11 @@ function layout(title: string, body: string, description?: string): string {
 </head>
 <body>
   <header>
-    <p class="kicker"><a href="/">krta.cc</a></p>
-    <h1>${escapeHtml(title)}</h1>
+    <div class="brand">
+      <p class="kicker"><a href="/">krta.cc</a></p>
+      <h1>${escapeHtml(title)}</h1>
+    </div>
+    ${environmentMark}
   </header>
   <main>
     ${body}
@@ -140,11 +173,6 @@ function countLine(snapshot: ContentSnapshot): string {
       : ''
   ].filter(Boolean)
   return parts.join(', ')
-}
-
-function countDescription(snapshot: ContentSnapshot): string {
-  const line = countLine(snapshot)
-  return line ? `${line}.` : ''
 }
 
 function entryDescription(count: number): string {
@@ -186,7 +214,8 @@ function editionGallery(title: string, rows: EditionRecord[]): string {
       <img src="${escapeHtml(edition.imageUrl)}" alt="${escapeHtml(`${row.name} edition ${edition.edition}`)}">
       <figcaption>
         <strong>${escapeHtml(row.name)}</strong>
-        ${escapeHtml(row.seriesName)} · Edition ${escapeHtml(edition.edition)}
+        <span class="series">${escapeHtml(row.seriesName)}</span>
+        <span class="edition">Edition ${escapeHtml(edition.edition)}</span>
       </figcaption>
     </figure>`)
   ).join('')
@@ -241,7 +270,7 @@ function draftCards(dumps: ListedDump[]): string {
     return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
         <h3><a href="${escapeHtml(href)}">Content draft ${dump.id}</a></h3>
-        <p class="counts">${escapeHtml(countDescription(dump.snapshot))}</p>
+        <p class="counts">${escapeHtml(countLine(dump.snapshot))}</p>
       </article>`
   }).join('')}</div>`
 }
@@ -272,7 +301,7 @@ export function renderHome(drafts: ListedDump[], results: ListedContest[]): stri
       <h2>Contest results</h2>
       ${resultCards(results)}
     </section>`,
-    'Dumps of published drafts and contest results.'
+    { description: 'Dumps of published drafts and contest results.' }
   )
 }
 
@@ -282,13 +311,13 @@ export function renderContentDump(
   snapshot: ContentSnapshot,
   slug: string | null
 ): string {
-  const description = countDescription(snapshot)
-  const notes = snapshot.environment !== 'production'
-    ? [`Environment: ${snapshot.environment}`]
-    : []
+  const description = countLine(snapshot)
+  const environment = snapshot.environment !== 'production'
+    ? snapshot.environment
+    : undefined
   const body = `
     ${description ? `<p class="meta">${escapeHtml(description)}</p>` : ''}
-    ${dumpByline(createdAt, slug, notes)}
+    ${dumpByline(createdAt, slug)}
     ${seriesList('New series', snapshot.newSeries)}
     ${seriesList('Updated series', snapshot.updatedSeries)}
     ${characterNames('New characters', snapshot.newCharacters)}
@@ -296,7 +325,10 @@ export function renderContentDump(
     ${editionGallery('New editions', snapshot.newEditions)}
     ${editionGallery('Updated editions', snapshot.updatedEditions)}
   `
-  return layout(`Content draft ${id}`, body, description || undefined)
+  return layout(`Content draft ${id}`, body, {
+    description: description || undefined,
+    environment
+  })
 }
 
 function contestTile(entry: ContestEntry, label: string): string {
@@ -329,7 +361,7 @@ export function renderContestHome(dumps: ListedContest[]): string {
   return layout(
     'Contest results',
     `<p class="meta">Finished contests, newest first. <a href="/">Karuta dumps</a>.</p>${body}`,
-    'Finished contests, newest first.'
+    { description: 'Finished contests, newest first.' }
   )
 }
 
@@ -375,7 +407,7 @@ export function renderContestDump(
       ${gallery}
     </section>
   `
-  return layout(`Card Hunt #${snapshot.eventCounter}`, body, description)
+  return layout(`Card Hunt #${snapshot.eventCounter}`, body, { description })
 }
 
 export function renderNotFound(): string {
