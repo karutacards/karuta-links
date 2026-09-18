@@ -205,8 +205,27 @@ function countDescription(snapshot: ContentSnapshot): string {
   return line ? `${line}.` : ''
 }
 
-function entryDescription(count: number): string {
-  return `${count} ${count === 1 ? 'entry' : 'entries'}.`
+function moneyAmount(amount: number, currency: string | null): string {
+  const formatted = amount.toLocaleString('en-US')
+  if (!currency) {
+    return formatted
+  }
+  const unit = currency === 'ticket' && amount !== 1 ? 'tickets' : currency
+  return `${formatted} ${unit}`
+}
+
+function contestDescription(snapshot: ContestSnapshot): string {
+  const winners = snapshot.winners.length
+  const entries = snapshot.entries.length
+  const counts = `${winners} ${winners === 1 ? 'winner' : 'winners'}, ${entries} ${entries === 1 ? 'entry' : 'entries'}.`
+  const fees: string[] = []
+  if (snapshot.buyInPrice !== null) {
+    fees.push(`${moneyAmount(snapshot.buyInPrice, snapshot.currency)} entry fee`)
+  }
+  if (snapshot.prizePool !== null) {
+    fees.push(`${moneyAmount(snapshot.prizePool, snapshot.currency)} prize pool`)
+  }
+  return fees.length === 0 ? counts : `${counts} ${fees.join(', ')}.`
 }
 
 function dumpByline(createdAt: number, slug: string | null, notes: string[] = []): string {
@@ -314,7 +333,7 @@ function resultCards(dumps: ListedContest[]): string {
     return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
         <h3><a href="${escapeHtml(href)}">Card Hunt #${dump.snapshot.eventCounter}</a></h3>
-        <p class="counts">${escapeHtml(entryDescription(dump.snapshot.entries.length))}</p>
+        <p class="counts">${escapeHtml(contestDescription(dump.snapshot))}</p>
       </article>`
   }).join('')}</div>`
 }
@@ -399,7 +418,7 @@ export function renderContestHome(dumps: ListedContest[]): string {
       return `<article class="card">
         <p class="meta">${escapeHtml(formatApDate(dump.createdAt))}</p>
         <h2><a href="${escapeHtml(href)}">Card Hunt #${dump.snapshot.eventCounter}</a></h2>
-        <p class="counts">${escapeHtml(entryDescription(dump.snapshot.entries.length))}</p>
+        <p class="counts">${escapeHtml(contestDescription(dump.snapshot))}</p>
       </article>`
     }).join('')}</div>`
 
@@ -429,7 +448,7 @@ export function renderContestDump(
       contestTile(row, `#${index + 1} · ${formatContestScore(row.score)}`)
     ).join('')}</div>`
 
-  const entryLine = entryDescription(snapshot.entries.length)
+  const entryLine = contestDescription(snapshot)
   const body = `
     <p class="meta">${escapeHtml(entryLine)}</p>
     ${dumpByline(createdAt, slug)}

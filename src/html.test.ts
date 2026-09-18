@@ -64,12 +64,32 @@ describe('renderContestDump', () => {
     expect(page).toContain('class="winners"')
     expect(page).not.toContain('class="series-list"')
     expect(page).not.toContain('User ID:')
-    expect(page).toContain('content="1 entry."')
-    expect(page).toContain('property="og:description" content="1 entry."')
+    expect(page).toContain('<p class="meta">3 winners, 1 entry. 100 gold entry fee, 500 gold prize pool.</p>')
+    expect(page).toContain('content="3 winners, 1 entry. 100 gold entry fee, 500 gold prize pool."')
+    expect(page).toContain('property="og:description" content="3 winners, 1 entry. 100 gold entry fee, 500 gold prize pool."')
     expect(page).toContain('>krta.cc/abc123</a>')
     expect(page).not.toContain('Short URL:')
     expect(page).not.toContain('UTC. krta.cc')
     expect(page).not.toContain('>/abc123<')
+  })
+
+  it('lists winners, entries, ticket entry fee and prize pool', () => {
+    const page = renderContestDump(1, Date.UTC(2026, 8, 17, 12, 0), {
+      kind: CONTEST_KIND,
+      contestName: 'card_hunt',
+      eventCounter: 1,
+      description: 'Hunt.',
+      judgingFinishedAt: null,
+      buyInPrice: 4,
+      currency: 'ticket',
+      prizePool: 447,
+      submissionCount: 0,
+      reference: null,
+      winners: [],
+      entries: []
+    }, null)
+    expect(page).toContain('0 winners, 0 entries. 4 tickets entry fee, 447 tickets prize pool.')
+    expect(page).toContain('property="og:description" content="0 winners, 0 entries. 4 tickets entry fee, 447 tickets prize pool."')
   })
 })
 
