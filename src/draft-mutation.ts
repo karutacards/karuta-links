@@ -45,6 +45,33 @@ function sameAliases(left: readonly string[], right: readonly string[]): boolean
   return left.every((alias, index) => alias === right[index])
 }
 
+function aliasIdentity(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function assertLiveRow(
+  current: DraftEntity,
+  name: string,
+  seriesKey: string,
+  aliases: string[]
+): void {
+  if (current.importAction !== 'update') {
+    return
+  }
+  if (name !== current.name) {
+    throw new DraftError('INVALID_INPUT', 'This live row cannot be renamed.', 400)
+  }
+  if (current.type === 'character' && seriesKey !== current.seriesKey) {
+    throw new DraftError('INVALID_INPUT', 'This live row cannot change series.', 400)
+  }
+  const nextKeys = new Set(aliases.map(aliasIdentity))
+  for (const alias of current.baseAliases) {
+    if (!nextKeys.has(aliasIdentity(alias))) {
+      throw new DraftError('INVALID_INPUT', 'Imported aliases cannot be removed.', 400)
+    }
+  }
+}
+
 function sameEntityContent(left: DraftEntity, right: DraftEntity): boolean {
   if (left.type !== right.type || left.name !== right.name || !sameAliases(left.aliases, right.aliases)) {
     return false
@@ -121,6 +148,8 @@ function addEntity(
         key,
         name,
         aliases,
+        importAction: 'add',
+        baseAliases: [],
         revision: 1,
         lastEditorId: editorId,
         lastEditorName: editorName
@@ -131,6 +160,8 @@ function addEntity(
         name,
         seriesKey: resolveDraftSeriesKey(mutation.seriesKey, draftSeries),
         aliases,
+        importAction: 'add',
+        baseAliases: [],
         revision: 1,
         lastEditorId: editorId,
         lastEditorName: editorName
@@ -164,6 +195,12 @@ function updateEntity(
   let next: DraftEntity
   const series = asSeries(current)
   const character = asCharacter(current)
+  const nextSeriesKey = character
+    ? (mutation.seriesKey !== undefined && mutation.seriesKey.trim() !== ''
+      ? resolveDraftSeriesKey(mutation.seriesKey, draftSeries)
+      : character.seriesKey)
+    : current.type === 'series' ? current.key : ''
+  assertLiveRow(current, name, nextSeriesKey, aliases)
   if (series) {
     next = {
       ...series,
@@ -174,9 +211,7 @@ function updateEntity(
       lastEditorName: editorName
     }
   } else if (character) {
-    const seriesKey = mutation.seriesKey !== undefined && mutation.seriesKey.trim() !== ''
-      ? resolveDraftSeriesKey(mutation.seriesKey, draftSeries)
-      : character.seriesKey
+    const seriesKey = nextSeriesKey
     if (!seriesKey) {
       throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
     }

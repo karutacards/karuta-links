@@ -2,10 +2,13 @@ export const DRAFT_SECTION = 'drafts'
 
 export type DraftEntityType = 'series' | 'character'
 
+export type DraftImportAction = 'add' | 'update'
+
 export type DraftSeriesInput = {
   key: string
   name: string
   aliases?: string[]
+  action?: DraftImportAction
 }
 
 export type DraftCharacterInput = {
@@ -13,6 +16,7 @@ export type DraftCharacterInput = {
   name: string
   seriesKey: string
   aliases?: string[]
+  action?: DraftImportAction
 }
 
 export type DraftCatalogInput = {
@@ -25,6 +29,8 @@ export type DraftSeries = {
   key: string
   name: string
   aliases: string[]
+  importAction: DraftImportAction
+  baseAliases: string[]
   revision: number
   lastEditorId: string | null
   lastEditorName: string | null
@@ -36,6 +42,8 @@ export type DraftCharacter = {
   name: string
   seriesKey: string
   aliases: string[]
+  importAction: DraftImportAction
+  baseAliases: string[]
   revision: number
   lastEditorId: string | null
   lastEditorName: string | null

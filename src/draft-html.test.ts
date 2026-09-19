@@ -15,6 +15,8 @@ describe('draft HTML', () => {
         key: 'new-series',
         name: 'New Series',
         aliases: ['Alt'],
+        importAction: 'add',
+        baseAliases: [],
         revision: 3,
         lastEditorId: '1',
         lastEditorName: 'craig'
@@ -34,6 +36,7 @@ describe('draft HTML', () => {
     expect(page).toContain('/events?after=')
     expect(page).not.toContain('Unlocked.')
     expect(page).toContain('data-save="1" disabled')
+    expect(page).toContain("importAction === 'update'")
     expect(page).toContain('Add series')
     expect(page).toContain('Add alias')
     expect(page).toContain('color-scheme: dark')

@@ -168,6 +168,10 @@ function layout(title: string, body: string, script = ''): string {
       color: var(--ink);
       font: inherit;
     }
+    input:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
     .wrap { overflow-x: auto; }
     table {
       width: 100%;
