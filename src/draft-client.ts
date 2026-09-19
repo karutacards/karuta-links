@@ -511,6 +511,8 @@ window.krtaDraftEditor = function () {
   var historyTarget = null;
   var descriptionBusy = false;
   var saveAllBusy = false;
+  if (typeof state.canAdmin !== 'boolean') state.canAdmin = false;
+  if (typeof state.hidden !== 'boolean') state.hidden = false;
   if (typeof state.description !== 'string') state.description = '';
   if (!Array.isArray(state.reviews)) state.reviews = [];
   var lastReviews = reviewKey(state.reviews);
@@ -1432,6 +1434,21 @@ window.krtaDraftEditor = function () {
       window.location.reload();
       return;
     }
+    if (target.id === 'hide-draft') {
+      var hideAction = state.hidden ? 'unhide' : 'hide';
+      var hideVerb = state.hidden ? 'unhidden' : 'hidden';
+      var hidden = await api('/api/v1/drafts/' + state.id + '/' + hideAction, { method: 'POST', body: '{}' });
+      if (!hidden.response.ok) {
+        showStatus(status, hidden.body && hidden.body.error ? hidden.body.error : 'The draft could not be ' + hideVerb + '.', true);
+        return;
+      }
+      window.location.reload();
+      return;
+    }
+    if (target.id === 'draft-config-open') {
+      openDraftConfig();
+      return;
+    }
     var reviewBtn = target.closest('[data-review]');
     if (reviewBtn && (reviewBtn.id === 'review-approve' || reviewBtn.id === 'review-reject')) {
       await submitReview(reviewBtn.getAttribute('data-review'));
@@ -1613,7 +1630,7 @@ window.krtaDraftEditor = function () {
   }
   async function commitDescription(saveId) {
     var field = document.getElementById('draft-description');
-    if (!field || !state.canLock || descriptionBusy) return;
+    if (!field || !state.canAdmin || descriptionBusy) return;
     var next = field.value.replace(/^\s+|\s+$/g, '');
     if (next === state.description) {
       field.value = next;
@@ -1641,8 +1658,16 @@ window.krtaDraftEditor = function () {
     polling = true;
     try {
       var result = await api('/api/v1/drafts/' + state.id + '/events?after=' + after);
+      if (result.response.status === 404) {
+        window.location.reload();
+        return;
+      }
       if (!result.response.ok || !result.body) return;
       var body = result.body;
+      if (Boolean(body.hiddenAt) !== Boolean(state.hidden)) {
+        window.location.reload();
+        return;
+      }
       if (Boolean(body.lockedAt) !== Boolean(state.locked)) {
         if (body.lockedAt && !state.locked) rememberLockNotice('locked');
         else if (!body.lockedAt && state.locked) rememberLockNotice('unlocked');
@@ -1696,6 +1721,96 @@ window.krtaDraftEditor = function () {
     poll();
     startPolling();
   });
+  function accessConfigState() {
+    return state.accessConfig && typeof state.accessConfig === 'object' ? state.accessConfig : null;
+  }
+  function fillDraftConfig() {
+    var cfg = accessConfigState();
+    var access = document.getElementById('draft-config-access');
+    var whitelist = document.getElementById('draft-config-whitelist');
+    var drops = document.getElementById('draft-config-drops');
+    var grabs = document.getElementById('draft-config-grabs');
+    var purchases = document.getElementById('draft-config-purchases');
+    if (!access || !whitelist || !drops || !grabs || !purchases) return;
+    var global = cfg && cfg.global ? cfg.global : {};
+    var override = cfg && cfg.override ? cfg.override : {};
+    var globalOpt = access.querySelector('option[value=""]');
+    if (globalOpt) globalOpt.textContent = 'Global (' + (global.access || 'open') + ')';
+    access.value = override.access || '';
+    whitelist.value = Array.isArray(override.whitelist) ? override.whitelist.join('\n') : '';
+    whitelist.placeholder = 'One Discord ID per line. Leave empty to use the global list.';
+    var creds = override.credentials || {};
+    var globalCreds = global.credentials || {};
+    drops.value = creds.minDrops != null ? String(creds.minDrops) : '';
+    grabs.value = creds.minGrabs != null ? String(creds.minGrabs) : '';
+    purchases.value = creds.minPurchases != null ? String(creds.minPurchases) : '';
+    drops.placeholder = globalCreds.minDrops != null ? String(globalCreds.minDrops) : '';
+    grabs.placeholder = globalCreds.minGrabs != null ? String(globalCreds.minGrabs) : '';
+    purchases.placeholder = globalCreds.minPurchases != null ? String(globalCreds.minPurchases) : '';
+  }
+  function readDraftConfigOverride() {
+    var access = document.getElementById('draft-config-access');
+    var whitelist = document.getElementById('draft-config-whitelist');
+    var drops = document.getElementById('draft-config-drops');
+    var grabs = document.getElementById('draft-config-grabs');
+    var purchases = document.getElementById('draft-config-purchases');
+    var override = {};
+    if (access && access.value) override.access = access.value;
+    if (whitelist && whitelist.value.replace(/^\s+|\s+$/g, '')) {
+      override.whitelist = whitelist.value.split(/\r?\n/).map(function (id) {
+        return id.replace(/^\s+|\s+$/g, '');
+      }).filter(Boolean);
+    }
+    var credentials = {};
+    if (drops && drops.value !== '') credentials.minDrops = Number(drops.value);
+    if (grabs && grabs.value !== '') credentials.minGrabs = Number(grabs.value);
+    if (purchases && purchases.value !== '') credentials.minPurchases = Number(purchases.value);
+    if (Object.keys(credentials).length) override.credentials = credentials;
+    return Object.keys(override).length ? override : null;
+  }
+  async function saveDraftConfig(override) {
+    var result = await api('/api/v1/drafts/' + state.id + '/config', {
+      method: 'PATCH',
+      body: JSON.stringify({ override: override })
+    });
+    if (!result.response.ok) {
+      showStatus(status, result.body && result.body.error ? result.body.error : 'The draft access could not be saved.', true);
+      return false;
+    }
+    window.location.reload();
+    return true;
+  }
+  function openDraftConfig() {
+    var dialog = document.getElementById('draft-config');
+    if (!dialog || !dialog.showModal) return;
+    fillDraftConfig();
+    dialog.showModal();
+  }
+  var configDialog = document.getElementById('draft-config');
+  var configClose = document.getElementById('draft-config-close');
+  var configForm = document.getElementById('draft-config-form');
+  var configClear = document.getElementById('draft-config-clear');
+  if (configClose) {
+    configClose.addEventListener('click', function () {
+      if (configDialog && configDialog.open) configDialog.close();
+    });
+  }
+  if (configDialog) {
+    configDialog.addEventListener('click', function (event) {
+      if (event.target === configDialog) configDialog.close();
+    });
+  }
+  if (configForm) {
+    configForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      saveDraftConfig(readDraftConfigOverride());
+    });
+  }
+  if (configClear) {
+    configClear.addEventListener('click', function () {
+      saveDraftConfig(null);
+    });
+  }
   var historyDialog = document.getElementById('draft-history');
   var historyClose = document.getElementById('draft-history-close');
   if (historyClose) {

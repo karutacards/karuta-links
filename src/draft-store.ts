@@ -10,6 +10,7 @@ import {
   restoreIdentityFromCatalog
 } from './draft-restore'
 import { applyDraftMutation, type DraftMutation } from './draft-mutation'
+import { parseDraftAccessOverride, type DraftAccessOverride } from './drafts-config'
 import { allocateId } from './db'
 import {
   DRAFT_SECTION,
@@ -39,6 +40,8 @@ type DraftRow = {
   updated_at: number
   locked_at: number | null
   locked_by: string | null
+  hidden_at: number | null
+  access_config: string | null
   description: string | null
 }
 
@@ -180,9 +183,19 @@ function entityPayload(
   })
 }
 
+
+function parseStoredAccessOverride(raw: string | null | undefined): DraftAccessOverride | null {
+  if (!raw) return null
+  try {
+    return parseDraftAccessOverride(JSON.parse(raw) as unknown)
+  } catch {
+    throw new DraftError('UNAVAILABLE', 'Draft access could not be verified.', 503)
+  }
+}
+
 async function getDraftRow(db: D1Database, id: number): Promise<DraftRow | null> {
   return db.prepare(
-    `SELECT id, created_at, updated_at, locked_at, locked_by, description
+    `SELECT id, created_at, updated_at, locked_at, locked_by, hidden_at, access_config, description
      FROM drafts WHERE id = ?`
   ).bind(id).first<DraftRow>()
 }
@@ -390,6 +403,8 @@ export async function getDraft(db: D1Database, id: number): Promise<DraftRecord 
     updatedAt: row.updated_at,
     lockedAt: row.locked_at,
     lockedBy: row.locked_by,
+    hiddenAt: row.hidden_at ?? null,
+    accessOverride: parseStoredAccessOverride(row.access_config),
     description: row.description ?? '',
     series,
     characters
@@ -546,6 +561,7 @@ export async function pollDraftEvents(
     reviews,
     lockedAt: draft.lockedAt,
     lockedBy: draft.lockedBy,
+    hiddenAt: draft.hiddenAt,
     description: draft.description
   }
 }
@@ -813,12 +829,13 @@ async function writeLockAudit(
   editorName: string,
   now: number,
   lockedAt: number | null,
-  lockedBy: string | null
+  lockedBy: string | null,
+  hiddenAt: number | null
 ): Promise<DraftRecord> {
   await db.batch([
     db.prepare(
-      `UPDATE drafts SET locked_at = ?, locked_by = ?, updated_at = ? WHERE id = ?`
-    ).bind(lockedAt, lockedBy, now, draftId),
+      `UPDATE drafts SET locked_at = ?, locked_by = ?, hidden_at = ?, updated_at = ? WHERE id = ?`
+    ).bind(lockedAt, lockedBy, hiddenAt, now, draftId),
     db.prepare(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
@@ -846,7 +863,7 @@ export async function lockDraft(
   if (draft.locked_at) {
     return readDraftOrThrow(db, draftId)
   }
-  return writeLockAudit(db, draftId, 'lock', editorId, editorName, now, now, editorId)
+  return writeLockAudit(db, draftId, 'lock', editorId, editorName, now, now, editorId, draft.hidden_at)
 }
 
 export async function unlockDraft(
@@ -863,7 +880,108 @@ export async function unlockDraft(
   if (!draft.locked_at) {
     return readDraftOrThrow(db, draftId)
   }
-  return writeLockAudit(db, draftId, 'unlock', editorId, editorName, now, null, null)
+  return writeLockAudit(db, draftId, 'unlock', editorId, editorName, now, null, null, null)
+}
+
+export async function hideDraft(
+  db: D1Database,
+  draftId: number,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftRecord> {
+  const draft = await getDraftRow(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  if (!draft.locked_at) {
+    throw new DraftError('LOCKED', 'Lock this draft before hiding it.', 409)
+  }
+  if (draft.hidden_at) {
+    return readDraftOrThrow(db, draftId)
+  }
+  return writeHideAudit(db, draftId, 'hide', editorId, editorName, now, now)
+}
+
+export async function unhideDraft(
+  db: D1Database,
+  draftId: number,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftRecord> {
+  const draft = await getDraftRow(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  if (!draft.hidden_at) {
+    return readDraftOrThrow(db, draftId)
+  }
+  return writeHideAudit(db, draftId, 'unhide', editorId, editorName, now, null)
+}
+
+async function writeHideAudit(
+  db: D1Database,
+  draftId: number,
+  action: 'hide' | 'unhide',
+  editorId: string,
+  editorName: string,
+  now: number,
+  hiddenAt: number | null
+): Promise<DraftRecord> {
+  await db.batch([
+    db.prepare(
+      `UPDATE drafts SET hidden_at = ?, updated_at = ? WHERE id = ?`
+    ).bind(hiddenAt, now, draftId),
+    db.prepare(
+      `INSERT INTO draft_audit
+       (draft_id, entity_type, entity_key, action, before_json, after_json,
+        discord_id, username, created_at)
+       VALUES (?, 'draft', '', ?, NULL, NULL, ?, ?, ?)`
+    ).bind(draftId, action, editorId, editorName, now)
+  ])
+  return readDraftOrThrow(db, draftId)
+}
+
+
+export async function setDraftAccessConfig(
+  db: D1Database,
+  draftId: number,
+  override: DraftAccessOverride | null,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftRecord> {
+  const draft = await getDraftRow(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  const current = parseStoredAccessOverride(draft.access_config)
+  const next = parseDraftAccessOverride(override)
+  const currentJson = current ? JSON.stringify(current) : ''
+  const nextJson = next ? JSON.stringify(next) : ''
+  if (currentJson === nextJson) {
+    return readDraftOrThrow(db, draftId)
+  }
+  await db.batch([
+    db.prepare(
+      `UPDATE drafts SET access_config = ?, updated_at = ? WHERE id = ?`
+    ).bind(next ? JSON.stringify(next) : null, now, draftId),
+    db.prepare(
+      `INSERT INTO draft_audit
+       (draft_id, entity_type, entity_key, action, before_json, after_json,
+        discord_id, username, created_at)
+       VALUES (?, 'draft', '', 'config', ?, ?, ?, ?, ?)`
+    ).bind(
+      draftId,
+      JSON.stringify({ override: current }),
+      JSON.stringify({ override: next }),
+      editorId,
+      editorName,
+      now
+    )
+  ])
+  return readDraftOrThrow(db, draftId)
 }
 
 export function normalizeDraftDescription(value: string): string {

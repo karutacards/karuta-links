@@ -401,10 +401,16 @@ function layout(title: string, body: string, script = ''): string {
     .meta, .copy, .empty { color: var(--muted); }
     .banner[hidden] { display: none; }
     .banner {
+      position: sticky;
+      top: max(0.75rem, env(safe-area-inset-top, 0px));
+      z-index: 5;
       margin: 0 0 0.65rem;
       padding: 0.45rem 0.6rem;
       border: 1px solid var(--line);
       background: var(--panel);
+    }
+    .banner:not([hidden]) + .workspace .activity-panel {
+      top: calc(max(0.75rem, env(safe-area-inset-top, 0px)) + 3.1rem);
     }
     .banner.error { border-color: var(--danger); color: var(--danger); }
     .banner.ok { border-color: var(--ok); color: var(--ok); }
@@ -703,6 +709,45 @@ function layout(title: string, body: string, script = ''): string {
       color: var(--ink);
     }
     .history-dialog::backdrop { background: rgba(8, 10, 14, 0.65); }
+
+    .config-dialog { width: min(32rem, calc(100vw - 2rem)); }
+    .config-form {
+      display: grid;
+      gap: 0.75rem;
+      padding: 0.85rem;
+    }
+    .config-field {
+      display: grid;
+      gap: 0.3rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .config-field select,
+    .config-field textarea,
+    .config-field input {
+      color: var(--ink);
+      font: inherit;
+      font-weight: 500;
+      border: 1px solid var(--line);
+      background: #0e1016;
+      padding: 0.35rem 0.45rem;
+    }
+    .config-field textarea { resize: vertical; min-height: 4.5rem; }
+    .config-creds {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.55rem;
+    }
+    .config-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.45rem;
+    }
+    @media (max-width: 39.99rem) {
+      .config-creds { grid-template-columns: 1fr; }
+    }
     .history-head {
       display: flex;
       align-items: flex-start;
@@ -802,22 +847,33 @@ export function renderDraftImport(): string {
 export function renderDraftEditor(
   draft: DraftRecord,
   options: {
-    canLock: boolean
+    canAdmin: boolean
     username: string
     discordId?: string
     reviews?: DraftReview[]
+    accessConfig?: {
+      global: { access: string; whitelist: string[]; credentials: { minDrops: number; minGrabs: number; minPurchases: number } }
+      override: unknown
+      effective: { access: string; whitelist: string[]; credentials: { minDrops: number; minGrabs: number; minPurchases: number } }
+    } | null
   }
 ): string {
   const locked = Boolean(draft.lockedAt)
+  const hidden = Boolean(draft.hiddenAt)
   const lockLine = locked && draft.lockedAt
     ? `<p class="meta">Locked on ${escapeHtml(formatApDate(draft.lockedAt))}.</p>`
+    : ''
+  const hideLine = locked && hidden && options.canAdmin
+    ? '<p class="meta">This draft is hidden.</p>'
     : ''
   const payload = {
     id: draft.id,
     locked,
-    canLock: options.canLock,
+    hidden,
+    canAdmin: options.canAdmin,
     username: options.username,
     discordId: options.discordId || '',
+    accessConfig: options.accessConfig ?? null,
     description: draft.description,
     series: draft.series,
     characters: draft.characters,
@@ -846,15 +902,18 @@ export function renderDraftEditor(
        <div class="lede">
          <h1>Draft ${draft.id}</h1>
          ${lockLine}
+         ${hideLine}
        </div>
        <div class="top-side">
          <div class="top-tools">
            <div id="draft-presence" class="presence" aria-label="Editors on this draft"></div>
            ${!locked ? '<button type="button" id="save-all" disabled>Save all</button>' : ''}
            ${!locked ? '<button type="button" id="discard-all" disabled>Discard all</button>' : ''}
-           ${options.canLock && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
-           ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.txt">Download</a>` : ''}
-           ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
+           ${options.canAdmin && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
+           ${options.canAdmin && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.txt">Download</a>` : ''}
+           ${options.canAdmin && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
+           ${options.canAdmin && locked ? `<button type="button" id="hide-draft">${hidden ? 'Unhide' : 'Hide'}</button>` : ''}
+           ${options.canAdmin ? '<button type="button" id="draft-config-open">Config</button>' : ''}
          </div>
          ${locked ? `<div id="draft-review" class="review">
            <p class="review-prompt" title="Ready to publish?">Ready to publish?</p>
@@ -869,7 +928,7 @@ export function renderDraftEditor(
          </div>` : ''}
        </div>
      </div>
-     ${options.canLock
+     ${options.canAdmin
        ? `<textarea id="draft-description" class="draft-note" aria-label="Draft description" maxlength="1000" placeholder="Add a description.">${escapeHtml(draft.description)}</textarea>`
        : `<p id="draft-description-view" class="draft-note-view"${draft.description ? '' : ' hidden'}>${escapeHtml(draft.description)}</p>`}
      <p id="draft-status" class="banner" role="status" hidden></p>
@@ -926,10 +985,45 @@ export function renderDraftEditor(
        <aside class="activity" aria-label="Activity">
          <div class="activity-panel">
            <h2>Activity</h2>
-           <ol id="draft-activity"${options.canLock && !locked ? ' data-restore="1"' : ''}></ol>
+           <ol id="draft-activity"${options.canAdmin && !locked ? ' data-restore="1"' : ''}></ol>
          </div>
        </aside>
      </div>
+
+     <dialog id="draft-config" class="history-dialog config-dialog" aria-labelledby="draft-config-title">
+       <div class="history-head">
+         <h2 id="draft-config-title">Draft access</h2>
+         <button type="button" id="draft-config-close">Close</button>
+       </div>
+       <form id="draft-config-form" class="config-form">
+         <label class="config-field">Access
+           <select id="draft-config-access" aria-label="Access">
+             <option value="">Global</option>
+             <option value="open">Open</option>
+             <option value="credentials">Credentials</option>
+             <option value="whitelist">Whitelist</option>
+           </select>
+         </label>
+         <label class="config-field">Whitelist
+           <textarea id="draft-config-whitelist" rows="3" placeholder="One Discord ID per line. Leave empty to use the global list."></textarea>
+         </label>
+         <div class="config-creds">
+           <label class="config-field">Drops
+             <input id="draft-config-drops" inputmode="numeric" autocomplete="off">
+           </label>
+           <label class="config-field">Grabs
+             <input id="draft-config-grabs" inputmode="numeric" autocomplete="off">
+           </label>
+           <label class="config-field">Purchases
+             <input id="draft-config-purchases" inputmode="numeric" autocomplete="off">
+           </label>
+         </div>
+         <div class="config-actions">
+           <button type="button" id="draft-config-clear">Use global settings</button>
+           <button type="submit" class="primary" id="draft-config-save">Save</button>
+         </div>
+       </form>
+     </dialog>
      <dialog id="draft-history" class="history-dialog" aria-labelledby="draft-history-kind draft-history-title">
        <div class="history-head">
          <div class="history-lede">

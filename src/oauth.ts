@@ -1,5 +1,5 @@
 import type { Hono } from 'hono'
-import { draftAccessForEnv } from './draft-access'
+import { draftIdentityForEnv } from './draft-access'
 import { renderDraftForbidden, renderDraftUnavailable } from './draft-html'
 import {
   clearNextCookie,
@@ -178,7 +178,7 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
     if (!user) {
       return json({ error: 'Discord did not return a user.' }, 401)
     }
-    const decision = await draftAccessForEnv(c.env, user.id)
+    const decision = await draftIdentityForEnv(c.env, user.id)
     if (!decision.ok) {
       const headers = new Headers({
         'content-type': 'text/html; charset=utf-8',

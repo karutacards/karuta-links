@@ -10,6 +10,8 @@ describe('draft HTML', () => {
       updatedAt: 2,
       lockedAt: null,
       lockedBy: null,
+      hiddenAt: null,
+      accessOverride: null,
       description: '',
       series: [{
         type: 'series',
@@ -24,12 +26,16 @@ describe('draft HTML', () => {
       }],
       characters: []
     }
-    const page = renderDraftEditor(draft, { canLock: true, username: 'craig' })
+    const page = renderDraftEditor(draft, { canAdmin: true, username: 'craig' })
     expect(page).toContain('draft-data')
     expect(page).toContain('id="draft-description"')
     expect(page).toContain('placeholder="Add a description."')
     expect(page).toContain('Lock draft')
     expect(page).not.toContain('Unlock draft')
+    expect(page).not.toContain('id="hide-draft"')
+    expect(page).toContain('id="draft-config-open">Config<')
+    expect(page).toContain('Use global settings')
+    expect(page).toContain('/config')
     expect(page).not.toContain('id="draft-review"')
     expect(page).not.toContain('>Download<')
     expect(page).toContain('id="draft-activity"')
@@ -93,6 +99,7 @@ describe('draft HTML', () => {
     expect(page).toContain("importAction === 'update'")
     expect(page).toContain('.import-tag')
     expect(page).toContain('.banner.warn')
+    expect(page).toContain('position: sticky')
     expect(page).toContain('aliases-cell')
     expect(page).toContain('That character is already on this series.')
     expect(page).toContain('If the name matches Karuta exactly, it will be treated as an update.')
@@ -139,11 +146,13 @@ describe('draft HTML', () => {
       updatedAt: 2,
       lockedAt: 1_700_000_000_000,
       lockedBy: '1',
+      hiddenAt: null,
+      accessOverride: null,
       description: 'Season 3 notes.',
       series: [],
       characters: []
     }
-    const page = renderDraftEditor(draft, { canLock: true, username: 'craig' })
+    const page = renderDraftEditor(draft, { canAdmin: true, username: 'craig' })
     expect(page).toContain('Locked on ')
     expect(page).not.toContain('Unlocked.')
     expect(page).not.toContain('Lock draft')
@@ -151,6 +160,11 @@ describe('draft HTML', () => {
     expect(page).not.toContain('Download importer TXT')
     expect(page).toContain('/export.txt')
     expect(page).toContain('Unlock draft')
+    expect(page).toContain('id="hide-draft">Hide<')
+    expect(page).not.toContain('id="hide-draft">Unhide<')
+    expect(page).not.toContain('This draft is hidden.')
+    expect(page).toContain("id === 'hide-draft'")
+    expect(page).toContain('status === 404')
     expect(page).toContain('id="draft-review"')
     expect(page).toContain('Ready to publish?')
     expect(page).toContain('text-overflow: ellipsis')
@@ -177,14 +191,37 @@ describe('draft HTML', () => {
       updatedAt: 2,
       lockedAt: null,
       lockedBy: null,
+      hiddenAt: null,
+      accessOverride: null,
       description: 'Season 3 notes.',
       series: [],
       characters: []
     }
-    const page = renderDraftEditor(draft, { canLock: false, username: 'other' })
+    const page = renderDraftEditor(draft, { canAdmin: false, username: 'other' })
     expect(page).toContain('id="draft-description-view"')
     expect(page).toContain('Season 3 notes.')
     expect(page).not.toContain('<textarea id="draft-description"')
     expect(page).not.toContain('data-restore="1"')
+    expect(page).not.toContain('id="hide-draft"')
+    expect(page).not.toContain('id="draft-config-open"')
+  })
+
+  it('shows Unhide to lock ids on a hidden draft', () => {
+    const draft: DraftRecord = {
+      id: 2,
+      createdAt: 1,
+      updatedAt: 2,
+      lockedAt: 1_700_000_000_000,
+      lockedBy: '1',
+      hiddenAt: 1_700_000_000_100,
+      accessOverride: null,
+      description: 'Season 3 notes.',
+      series: [],
+      characters: []
+    }
+    const page = renderDraftEditor(draft, { canAdmin: true, username: 'craig' })
+    expect(page).toContain('This draft is hidden.')
+    expect(page).toContain('id="hide-draft">Unhide<')
+    expect(page).not.toContain('id="hide-draft">Hide<')
   })
 })

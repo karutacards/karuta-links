@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   PRESENCE_STALE_MS,
   listDraftEvents,
+  hideDraft,
   lockDraft,
   pollDraftEvents,
   setDraftDescription,
   setDraftReview,
   touchDraftPresence,
   restoreDraft,
+  unhideDraft,
   unlockDraft
 } from './draft-store'
 
@@ -166,6 +168,7 @@ describe('draft events store', () => {
     expect(snapshot.after).toBe(8)
     expect(snapshot.lockedAt).toBe(9)
     expect(snapshot.lockedBy).toBe('1')
+    expect(snapshot.hiddenAt).toBeNull()
     expect(snapshot.description).toBe('')
     expect(snapshot.events).toHaveLength(1)
     expect(snapshot.presence).toEqual([{
@@ -214,6 +217,54 @@ describe('draft events store', () => {
     })
     await unlockDraft(alreadyUnlocked.db, 2, '1', 'craig', 50)
     expect(alreadyUnlocked.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
+  })
+
+  it('hides only a locked draft and clears hide on unlock', async () => {
+    const open = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, hidden_at: null },
+      entities: []
+    })
+    await expect(hideDraft(open.db, 2, '1', 'craig', 50)).rejects.toMatchObject({
+      code: 'LOCKED'
+    })
+
+    const locked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1', hidden_at: null },
+      entities: []
+    })
+    await hideDraft(locked.db, 2, '1', 'craig', 50)
+    expect(locked.queries.some((query) => (
+      query.sql.includes('INSERT INTO draft_audit')
+      && query.binds[0] === 2
+      && query.binds[1] === 'hide'
+    ))).toBe(true)
+
+    const alreadyHidden = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1', hidden_at: 11 },
+      entities: []
+    })
+    await hideDraft(alreadyHidden.db, 2, '1', 'craig', 50)
+    expect(alreadyHidden.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
+
+    const hidden = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1', hidden_at: 11 },
+      entities: []
+    })
+    await unhideDraft(hidden.db, 2, '1', 'craig', 50)
+    expect(hidden.queries.some((query) => (
+      query.sql.includes('INSERT INTO draft_audit')
+      && query.binds[1] === 'unhide'
+    ))).toBe(true)
+
+    const unlockHidden = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1', hidden_at: 11 },
+      entities: []
+    })
+    await unlockDraft(unlockHidden.db, 2, '1', 'craig', 50)
+    expect(unlockHidden.queries.some((query) => (
+      query.sql.includes('hidden_at')
+      && query.binds.includes(null)
+    ))).toBe(true)
   })
 
   it('stores a review only on a locked draft', async () => {

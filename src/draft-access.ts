@@ -1,6 +1,6 @@
 import { getFirestoreDocument } from './firestore'
 import type { DraftsConfig } from './drafts-config'
-import { draftsConfig } from './drafts-config'
+import { canAdminDrafts, draftsConfig } from './drafts-config'
 import { presentSecret } from './session'
 
 export const ACCESS_DENIED_MESSAGE = 'You do not have access to this draft.'
@@ -227,11 +227,46 @@ export async function evaluateDraftAccess(
   }
 }
 
+export async function draftIdentityForEnv(
+  env: Env,
+  discordId: string
+): Promise<AccessDecision> {
+  const loaded = envAccessLoaders(env)
+  if ('error' in loaded) {
+    return loaded.error
+  }
+  try {
+    if (await loaded.isBlacklisted(discordId)) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'FORBIDDEN',
+        message: ACCESS_DENIED_MESSAGE
+      }
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      code: 'UNAVAILABLE',
+      message: ACCESS_UNAVAILABLE_MESSAGE
+    }
+  }
+  return { ok: true }
+}
+
 export async function draftAccessForEnv(
   env: Env,
   discordId: string,
   config: DraftsConfig = draftsConfig
 ): Promise<AccessDecision> {
+  const identity = await draftIdentityForEnv(env, discordId)
+  if (!identity.ok) {
+    return identity
+  }
+  if (canAdminDrafts(discordId)) {
+    return { ok: true }
+  }
   const loaded = envAccessLoaders(env)
   if ('error' in loaded) {
     return loaded.error

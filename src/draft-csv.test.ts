@@ -10,6 +10,8 @@ describe('draft CSV', () => {
       updatedAt: 2,
       lockedAt: 3,
       lockedBy: '1',
+      hiddenAt: null,
+      accessOverride: null,
       description: '',
       series: [{
         type: 'series',
@@ -52,6 +54,8 @@ describe('draft CSV', () => {
       updatedAt: 2,
       lockedAt: 3,
       lockedBy: '1',
+      hiddenAt: null,
+      accessOverride: null,
       description: '',
       series: [{
         type: 'series',

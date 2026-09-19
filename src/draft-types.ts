@@ -1,3 +1,5 @@
+import type { DraftAccessOverride } from './drafts-config'
+
 export const DRAFT_SECTION = 'drafts'
 export const DRAFT_SAVES_SECTION = 'draft-saves'
 
@@ -64,6 +66,8 @@ export type DraftRecord = {
   updatedAt: number
   lockedAt: number | null
   lockedBy: string | null
+  hiddenAt: number | null
+  accessOverride: DraftAccessOverride | null
   description: string
   series: DraftSeries[]
   characters: DraftCharacter[]
@@ -116,6 +120,7 @@ export type DraftEventsSnapshot = {
   reviews: DraftReview[]
   lockedAt: number | null
   lockedBy: string | null
+  hiddenAt: number | null
   description: string
 }
 

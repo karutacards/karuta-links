@@ -159,6 +159,19 @@ export function draftAuditSpans(
   if (entry.action === 'unlock') {
     return [text(' unlocked this draft.')]
   }
+  if (entry.action === 'hide') {
+    return [text(' hid this draft.')]
+  }
+  if (entry.action === 'unhide') {
+    return [text(' unhid this draft.')]
+  }
+  if (entry.action === 'config') {
+    const after = entry.afterJson ?? ''
+    if (after.includes('"override":null')) {
+      return [text(" reset this draft's access settings.")]
+    }
+    return [text(" updated this draft's access settings.")]
+  }
   if (entry.action === 'describe') {
     const before = parseDescription(entry.beforeJson)
     const after = parseDescription(entry.afterJson)

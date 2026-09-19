@@ -159,6 +159,34 @@ describe('draft audit sentences', () => {
     expect(draftAuditSentence(row({
       entityType: 'draft',
       entityKey: '',
+      action: 'hide',
+      beforeJson: null,
+      afterJson: null
+    }))).toBe('@craig hid this draft.')
+    expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
+      action: 'unhide',
+      beforeJson: null,
+      afterJson: null
+    }))).toBe('@craig unhid this draft.')
+    expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
+      action: 'config',
+      beforeJson: JSON.stringify({ override: { access: 'open' } }),
+      afterJson: JSON.stringify({ override: { access: 'whitelist' } })
+    }))).toBe("@craig updated this draft's access settings.")
+    expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
+      action: 'config',
+      beforeJson: JSON.stringify({ override: { access: 'open' } }),
+      afterJson: JSON.stringify({ override: null })
+    }))).toBe("@craig reset this draft's access settings.")
+    expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
       action: 'describe',
       beforeJson: JSON.stringify({ description: '' }),
       afterJson: JSON.stringify({ description: 'Season 3 notes.' })
