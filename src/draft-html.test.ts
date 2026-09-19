@@ -10,6 +10,7 @@ describe('draft HTML', () => {
       updatedAt: 2,
       lockedAt: null,
       lockedBy: null,
+      description: '',
       series: [{
         type: 'series',
         key: 'new-series',
@@ -25,6 +26,8 @@ describe('draft HTML', () => {
     }
     const page = renderDraftEditor(draft, { canLock: true, username: 'craig' })
     expect(page).toContain('draft-data')
+    expect(page).toContain('id="draft-description"')
+    expect(page).toContain('placeholder="Add a description."')
     expect(page).toContain('Lock draft')
     expect(page).not.toContain('Unlock draft')
     expect(page).not.toContain('>Download<')
@@ -71,6 +74,7 @@ describe('draft HTML', () => {
       updatedAt: 2,
       lockedAt: 1_700_000_000_000,
       lockedBy: '1',
+      description: 'Season 3 notes.',
       series: [],
       characters: []
     }
@@ -82,5 +86,24 @@ describe('draft HTML', () => {
     expect(page).not.toContain('Download importer TXT')
     expect(page).toContain('/export.txt')
     expect(page).toContain('Unlock draft')
+    expect(page).toContain('id="draft-description"')
+    expect(page).toContain('Season 3 notes.')
+  })
+
+  it('shows a read-only description to editors who cannot lock', () => {
+    const draft: DraftRecord = {
+      id: 2,
+      createdAt: 1,
+      updatedAt: 2,
+      lockedAt: null,
+      lockedBy: null,
+      description: 'Season 3 notes.',
+      series: [],
+      characters: []
+    }
+    const page = renderDraftEditor(draft, { canLock: false, username: 'other' })
+    expect(page).toContain('id="draft-description-view"')
+    expect(page).toContain('Season 3 notes.')
+    expect(page).not.toContain('<textarea id="draft-description"')
   })
 })

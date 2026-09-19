@@ -10,6 +10,7 @@ describe('draft CSV', () => {
       updatedAt: 2,
       lockedAt: 3,
       lockedBy: '1',
+      description: '',
       series: [{
         type: 'series',
         key: 'new-series',
@@ -51,6 +52,7 @@ describe('draft CSV', () => {
       updatedAt: 2,
       lockedAt: 3,
       lockedBy: '1',
+      description: '',
       series: [{
         type: 'series',
         key: 'naruto',

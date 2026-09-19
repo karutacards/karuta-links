@@ -28,8 +28,8 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
 | `/api/v1/drafts` | Create a draft from a text catalog (`POST` only) |
-| `/api/v1/drafts/{id}` | Read a draft (`GET`) |
-| `/api/v1/drafts/{id}/events` | Poll new audit rows, current entities, lock state and presence (`GET`) |
+| `/api/v1/drafts/{id}` | Read a draft (`GET`). `lockIds` can set the description (`PATCH`) |
+| `/api/v1/drafts/{id}/events` | Poll new audit rows, current entities, lock state, description and presence (`GET`) |
 | `/api/v1/drafts/{id}/entities` | One entity mutation (`PATCH`) |
 | `/api/v1/drafts/{id}/entities/{type}/{key}/audit` | Entity audit rows |
 | `/api/v1/drafts/{id}/lock` | Lock a draft (`POST`, lock list only) |
@@ -126,7 +126,7 @@ Drafts are versioned catalog entities, not a live shared document. Public conten
 
 Every mode checks `blacklist.json.gz` on R2 `karuta-data`. Credentials mode reads `statistics_user/{discordId}` from Firestore. Failed access is `403` with a complete sentence that does not name the failed bar. A missing blacklist or Firestore config fails closed with `503`.
 
-IDs in `lockIds` can lock or unlock a draft. Each lock or unlock writes an Activity event. Locked drafts reject edits with `423`. Those IDs can download a KarutaImporter TXT (`type,action,name,seriesKey,aliases,groups`) from the locked editor. Aliases are joined with `|`. The groups column is empty. Editions and images stay out.
+IDs in `lockIds` can lock or unlock a draft and can inline-edit a draft description. Enter or blur saves it. Everyone sees the new text on the next poll. Each lock, unlock or description change writes an Activity event. The description stays editable after lock. Locked drafts reject edits with `423`. Those IDs can download a KarutaImporter TXT (`type,action,name,seriesKey,aliases,groups`) from the locked editor. Aliases are joined with `|`. The groups column is empty. Editions and images stay out.
 
 Each series or character has a revision. A save sends the revision it started from. A conflict or a delete-while-edit returns `409` with `CONFLICT` or `ENTITY_GONE` plus the current entity. The editor reloads that row. There are no row locks that last while a tab is open.
 
@@ -136,7 +136,7 @@ The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/
 
 An `update` row freezes the key, name and imported aliases. Collaborators may add aliases and may remove only aliases added after import. Rows created on krta.cc, and imported `add` rows, stay fully editable. Locked TXT export writes that stored `action`. A blank-draft create path is not implemented.
 
-Draft HTML is a standalone dark editor. It does not use dump page chrome, a home link or a footer. Series and characters are tables. The first row of each table adds an entity. Alias chips remove on click. Enter locks a new alias. Last edited is a column of Discord mentions. History opens a dialog that names the series or character, then that row's audit with timestamps and the same formatting as Activity. Presence chips sit in the header. Activity is a live rail of complete-sentence audit lines. The rail scrolls inside a pane that follows the catalog height and does not grow the page past it. Narrow viewports stack the catalog above Activity, hide Last edited, and wrap row actions.
+Draft HTML is a standalone dark editor. It does not use dump page chrome, a home link or a footer. Series and characters are tables. The first row of each table adds an entity. Alias chips remove on click. Enter locks a new alias. Last edited is a column of Discord mentions. History opens a dialog that names the series or character, then that row's audit with timestamps and the same formatting as Activity. A description sits under the title. `lockIds` edit it inline. Everyone else reads it. Presence chips sit in the header. Activity is a live rail of complete-sentence audit lines. The rail scrolls inside a pane that follows the catalog height and does not grow the page past it. Narrow viewports stack the catalog above Activity, hide Last edited, and wrap row actions.
 
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 

@@ -4,6 +4,7 @@ import {
   listDraftEvents,
   lockDraft,
   pollDraftEvents,
+  setDraftDescription,
   touchDraftPresence,
   unlockDraft
 } from './draft-store'
@@ -150,6 +151,7 @@ describe('draft events store', () => {
     expect(snapshot.after).toBe(8)
     expect(snapshot.lockedAt).toBe(9)
     expect(snapshot.lockedBy).toBe('1')
+    expect(snapshot.description).toBe('')
     expect(snapshot.events).toHaveLength(1)
     expect(snapshot.presence).toEqual([{ discordId: '1', username: 'craig' }])
   })
@@ -192,5 +194,21 @@ describe('draft events store', () => {
     })
     await unlockDraft(alreadyUnlocked.db, 2, '1', 'craig', 50)
     expect(alreadyUnlocked.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
+  })
+
+  it('writes a describe audit row only when the description changes', async () => {
+    const changed = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: '' },
+      entities: []
+    })
+    await setDraftDescription(changed.db, 2, '  Season 3 notes.  ', '1', 'craig', 50)
+    expect(changed.queries.some((query) => query.sql.includes("'describe'"))).toBe(true)
+
+    const same = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: 'Season 3 notes.' },
+      entities: []
+    })
+    await setDraftDescription(same.db, 2, 'Season 3 notes.', '1', 'craig', 50)
+    expect(same.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
   })
 })

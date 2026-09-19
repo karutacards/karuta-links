@@ -12,6 +12,18 @@ export function actorName(username: string): string {
   return raw.charAt(0) === '@' ? raw.slice(1) : raw
 }
 
+function parseDescription(raw: string | null): string {
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return ''
+    const description = (parsed as Record<string, unknown>).description
+    return typeof description === 'string' ? description : ''
+  } catch {
+    return ''
+  }
+}
+
 function parsePayload(raw: string | null): AuditPayload | null {
   if (!raw) return null
   try {
@@ -105,6 +117,13 @@ export function draftAuditSpans(entry: DraftAuditRow): DraftAuditSpan[] {
   }
   if (entry.action === 'unlock') {
     return [text(' unlocked this draft.')]
+  }
+  if (entry.action === 'describe') {
+    const before = parseDescription(entry.beforeJson)
+    const after = parseDescription(entry.afterJson)
+    if (!before && after) return [text(' set the draft description.')]
+    if (before && !after) return [text(' cleared the draft description.')]
+    return [text(' updated the draft description.')]
   }
   const before = parsePayload(entry.beforeJson)
   const after = parsePayload(entry.afterJson)

@@ -19,12 +19,15 @@ import {
 
 export const PRESENCE_STALE_MS = 10_000
 
+export const MAX_DRAFT_DESCRIPTION = 1_000
+
 type DraftRow = {
   id: number
   created_at: number
   updated_at: number
   locked_at: number | null
   locked_by: string | null
+  description: string | null
 }
 
 type EntityRow = {
@@ -103,7 +106,7 @@ function entityPayload(entity: DraftEntity): string {
 
 async function getDraftRow(db: D1Database, id: number): Promise<DraftRow | null> {
   return db.prepare(
-    `SELECT id, created_at, updated_at, locked_at, locked_by
+    `SELECT id, created_at, updated_at, locked_at, locked_by, description
      FROM drafts WHERE id = ?`
   ).bind(id).first<DraftRow>()
 }
@@ -286,6 +289,7 @@ export async function getDraft(db: D1Database, id: number): Promise<DraftRecord 
     updatedAt: row.updated_at,
     lockedAt: row.locked_at,
     lockedBy: row.locked_by,
+    description: row.description ?? '',
     series,
     characters
   }
@@ -376,7 +380,8 @@ export async function pollDraftEvents(
     characters: draft.characters,
     presence,
     lockedAt: draft.lockedAt,
-    lockedBy: draft.lockedBy
+    lockedBy: draft.lockedBy,
+    description: draft.description
   }
 }
 
@@ -576,4 +581,49 @@ export async function unlockDraft(
     return readDraftOrThrow(db, draftId)
   }
   return writeLockAudit(db, draftId, 'unlock', editorId, editorName, now, null, null)
+}
+
+export function normalizeDraftDescription(value: string): string {
+  return value.replace(/^\s+|\s+$/g, '')
+}
+
+export async function setDraftDescription(
+  db: D1Database,
+  draftId: number,
+  description: string,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftRecord> {
+  const draft = await getDraftRow(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  const next = normalizeDraftDescription(description)
+  if (next.length > MAX_DRAFT_DESCRIPTION) {
+    throw new DraftError('INVALID_INPUT', 'The draft description is too long.', 400)
+  }
+  const current = draft.description ?? ''
+  if (current === next) {
+    return readDraftOrThrow(db, draftId)
+  }
+  await db.batch([
+    db.prepare(
+      `UPDATE drafts SET description = ?, updated_at = ? WHERE id = ?`
+    ).bind(next, now, draftId),
+    db.prepare(
+      `INSERT INTO draft_audit
+       (draft_id, entity_type, entity_key, action, before_json, after_json,
+        discord_id, username, created_at)
+       VALUES (?, 'draft', '', 'describe', ?, ?, ?, ?, ?)`
+    ).bind(
+      draftId,
+      JSON.stringify({ description: current }),
+      JSON.stringify({ description: next }),
+      editorId,
+      editorName,
+      now
+    )
+  ])
+  return readDraftOrThrow(db, draftId)
 }

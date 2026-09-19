@@ -59,6 +59,7 @@ export type DraftRecord = {
   updatedAt: number
   lockedAt: number | null
   lockedBy: string | null
+  description: string
   series: DraftSeries[]
   characters: DraftCharacter[]
 }
@@ -99,6 +100,7 @@ export type DraftEventsSnapshot = {
   presence: DraftPresence[]
   lockedAt: number | null
   lockedBy: string | null
+  description: string
 }
 
 export type DraftConflict = {

@@ -22,8 +22,9 @@ import {
   listEntityAudit,
   lockDraft,
   mutateDraftEntity,
-  unlockDraft,
-  pollDraftEvents
+  pollDraftEvents,
+  setDraftDescription,
+  unlockDraft
 } from './draft-store'
 import { DraftError, type DraftEntityType } from './draft-types'
 import { canLockDrafts, draftsConfig, type DraftsConfig } from './drafts-config'
@@ -247,6 +248,44 @@ export function registerDrafts(
     })
   })
 
+  app.patch('/api/v1/drafts/:id', async (c) => {
+    const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
+    if (auth instanceof Response) {
+      return auth
+    }
+    if (!canLockDrafts(auth.session.discordId)) {
+      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
+    }
+    const id = parsePositiveDraftId(c.req.param('id'))
+    if (id === null) {
+      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
+    }
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
+    }
+    if (!body || typeof body !== 'object' || typeof (body as { description?: unknown }).description !== 'string') {
+      return json({ error: 'Description must be a string.', code: 'INVALID_INPUT' }, 400)
+    }
+    try {
+      const draft = await setDraftDescription(
+        c.env.DB,
+        id,
+        (body as { description: string }).description,
+        auth.session.discordId,
+        auth.session.username
+      )
+      return json({ description: draft.description })
+    } catch (error) {
+      if (error instanceof DraftError) {
+        return draftErrorResponse(error)
+      }
+      throw error
+    }
+  })
+
   app.get('/api/v1/drafts/:id/events', async (c) => {
     const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
     if (auth instanceof Response) {
@@ -289,7 +328,8 @@ export function registerDrafts(
         characters: snapshot.characters,
         presence: snapshot.presence,
         lockedAt: snapshot.lockedAt,
-        lockedBy: snapshot.lockedBy
+        lockedBy: snapshot.lockedBy,
+        description: snapshot.description
       }, 200, { 'cache-control': 'no-store' })
     } catch (error) {
       if (error instanceof DraftError) {

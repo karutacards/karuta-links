@@ -68,6 +68,29 @@ function layout(title: string, body: string, script = ''): string {
       gap: 0.35rem 0.75rem;
       margin: 0;
     }
+    .draft-note, .draft-note-view {
+      display: block;
+      width: 100%;
+      max-width: 48rem;
+      margin: 0 0 0.75rem;
+      color: var(--ink);
+      font: inherit;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .draft-note {
+      min-height: 2.5rem;
+      padding: 0.35rem 0.45rem;
+      border: 1px solid var(--line);
+      background: #0e1016;
+      resize: vertical;
+    }
+    .draft-note-view {
+      margin: 0 0 0.75rem;
+      color: var(--muted);
+    }
+    .draft-note-view[hidden] { display: none; }
     .top-tools {
       display: flex;
       flex-wrap: wrap;
@@ -440,6 +463,7 @@ export function renderDraftEditor(
     locked,
     canLock: options.canLock,
     username: options.username,
+    description: draft.description,
     series: draft.series,
     characters: draft.characters
   }
@@ -474,6 +498,9 @@ export function renderDraftEditor(
          ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
        </div>
      </div>
+     ${options.canLock
+       ? `<textarea id="draft-description" class="draft-note" aria-label="Draft description" maxlength="1000" placeholder="Add a description.">${escapeHtml(draft.description)}</textarea>`
+       : `<p id="draft-description-view" class="draft-note-view"${draft.description ? '' : ' hidden'}>${escapeHtml(draft.description)}</p>`}
      <p id="draft-status" class="banner" role="status" hidden></p>
      <div class="workspace">
        <div class="catalog">

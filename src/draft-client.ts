@@ -240,6 +240,8 @@ window.krtaDraftEditor = function () {
   var polling = false;
   var pollTimer = null;
   var historyTarget = null;
+  var descriptionBusy = false;
+  if (typeof state.description !== 'string') state.description = '';
   function findEntity(type, key) {
     var list = type === 'series' ? state.series : state.characters;
     for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
@@ -599,6 +601,40 @@ window.krtaDraftEditor = function () {
       });
     });
   }
+  function applyDescription(value) {
+    var next = typeof value === 'string' ? value : '';
+    if (next === state.description) return;
+    var field = document.getElementById('draft-description');
+    if (field && document.activeElement === field) return;
+    state.description = next;
+    if (field) field.value = next;
+    var view = document.getElementById('draft-description-view');
+    if (view) {
+      view.hidden = !next;
+      view.textContent = next;
+    }
+  }
+  async function commitDescription() {
+    var field = document.getElementById('draft-description');
+    if (!field || !state.canLock || descriptionBusy) return;
+    var next = field.value.replace(/^\s+|\s+$/g, '');
+    if (next === state.description) {
+      field.value = next;
+      return;
+    }
+    descriptionBusy = true;
+    var result = await api('/api/v1/drafts/' + state.id, {
+      method: 'PATCH',
+      body: JSON.stringify({ description: next })
+    });
+    descriptionBusy = false;
+    if (!result.response.ok) {
+      showStatus(status, result.body && result.body.error ? result.body.error : 'The description could not be saved.', true);
+      return;
+    }
+    state.description = result.body && typeof result.body.description === 'string' ? result.body.description : next;
+    field.value = state.description;
+  }
   async function poll() {
     if (document.hidden || polling) return;
     polling = true;
@@ -610,6 +646,7 @@ window.krtaDraftEditor = function () {
         window.location.reload();
         return;
       }
+      applyDescription(body.description);
       var events = Array.isArray(body.events) ? body.events : [];
       var nextPresence = presenceKey(body.presence);
       var presenceChanged = nextPresence !== lastPresence;
@@ -620,9 +657,12 @@ window.krtaDraftEditor = function () {
         lastPresence = nextPresence;
         renderPresence(body.presence);
       }
-      if (events.length) {
+      var catalogEvents = events.filter(function (entry) {
+        return entry.entityType !== 'draft';
+      });
+      if (catalogEvents.length) {
         applyCatalog(body.series || [], body.characters || []);
-        syncOpenHistory(events);
+        syncOpenHistory(catalogEvents);
       }
     } finally {
       polling = false;
@@ -658,6 +698,17 @@ window.krtaDraftEditor = function () {
     });
     historyDialog.addEventListener('close', function () {
       historyTarget = null;
+    });
+  }
+  var descriptionField = document.getElementById('draft-description');
+  if (descriptionField) {
+    descriptionField.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.shiftKey) return;
+      event.preventDefault();
+      commitDescription();
+    });
+    descriptionField.addEventListener('blur', function () {
+      commitDescription();
     });
   }
   render();
