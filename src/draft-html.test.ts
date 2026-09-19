@@ -48,6 +48,7 @@ describe('draft HTML', () => {
     expect(page).not.toContain('Unlocked.')
     expect(page).toContain('data-save="1" disabled')
     expect(page).toContain('id="save-all"')
+    expect(page).toContain('Save or discard your edits before locking.')
     expect(page).toContain('.alias-chip.removed')
     expect(page).toContain('tr.row.removed td:not(.acts)')
     expect(page).toContain('td.pending')

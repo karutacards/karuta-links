@@ -786,6 +786,23 @@ window.krtaDraftEditor = function () {
     }
     if (discardButton) discardButton.disabled = !anyDirty;
   }
+  function editorHasPending() {
+    return dirtyRows().length > 0 || descriptionDirty() || addFormsDirty();
+  }
+  function lockNoticeKey() {
+    return 'krta-draft-lock-' + state.id;
+  }
+  function rememberLockNotice(kind) {
+    try { sessionStorage.setItem(lockNoticeKey(), kind); } catch (e) {}
+  }
+  function showLockNotice() {
+    var kind = '';
+    try {
+      kind = sessionStorage.getItem(lockNoticeKey()) || '';
+      sessionStorage.removeItem(lockNoticeKey());
+    } catch (e) { kind = ''; }
+    if (kind === 'locked') showStatus(status, 'This draft was locked.', false);
+  }
   async function saveAll() {
     if (saveAllBusy || state.locked) return;
     saveAllBusy = true;
@@ -969,6 +986,10 @@ window.krtaDraftEditor = function () {
       return;
     }
     if (target.id === 'lock-draft') {
+      if (editorHasPending()) {
+        showStatus(status, 'Save or discard your edits before locking.', true);
+        return;
+      }
       var locked = await api('/api/v1/drafts/' + state.id + '/lock', { method: 'POST', body: '{}' });
       if (!locked.response.ok) {
         showStatus(status, locked.body && locked.body.error ? locked.body.error : 'The draft could not be locked.', true);
@@ -1132,6 +1153,7 @@ window.krtaDraftEditor = function () {
       if (!result.response.ok || !result.body) return;
       var body = result.body;
       if (Boolean(body.lockedAt) !== Boolean(state.locked)) {
+        if (body.lockedAt && !state.locked) rememberLockNotice('locked');
         window.location.reload();
         return;
       }
@@ -1203,6 +1225,7 @@ window.krtaDraftEditor = function () {
   render();
   poll();
   startPolling();
+  showLockNotice();
 };
 window.krtaDraftImport = function () {
   var status = document.getElementById('import-status');
