@@ -420,19 +420,23 @@ window.krtaDraftEditor = function () {
     var pendingDelete = !!row.dataset.userRemoved || !!row.dataset.cascadeRemoved;
     var conflicted = !!row.querySelector('[data-conflict]');
     var dirty = !!(pendingDelete || nameDirty || seriesDirty || aliasDirty);
+    var named = !!(nameInput && nameInput.value.trim());
+    var seriesNamed = !entity || entity.type !== 'character'
+      || !!(seriesInput && seriesInput.value.trim());
+    var ready = !!(pendingDelete || (dirty && named && seriesNamed));
     var deleteBtn = row.querySelector('[data-delete]');
     if (deleteBtn) deleteBtn.textContent = pendingDelete ? 'Restore' : 'Delete';
     var button = row.querySelector('[data-save]');
     if (button) {
-      button.disabled = !dirty || conflicted;
-      setPending(button, dirty && !conflicted);
+      button.disabled = !ready || conflicted;
+      setPending(button, ready && !conflicted);
     }
     var discard = row.querySelector('[data-discard]');
     if (discard) discard.disabled = !dirty;
     setPending(row.querySelector('td.name'), nameDirty);
     setPending(row.querySelector('td.series'), seriesDirty);
     setPending(aliasCell(row), aliasDirty);
-    setPending(row.querySelector('td.acts'), dirty);
+    setPending(row.querySelector('td.acts'), ready && !conflicted);
     syncSaveAll();
   }
   function syncAddRow(row) {
@@ -445,14 +449,17 @@ window.krtaDraftEditor = function () {
     var seriesDirty = !!(series && series.value.trim());
     var aliasDirty = !!(pending && pending.value.trim()) || aliases.length > 0;
     var dirty = nameDirty || seriesDirty || aliasDirty;
+    var ready = nameDirty && (!series || seriesDirty);
     setPending(name ? name.closest('td') : null, nameDirty);
     setPending(series ? series.closest('td') : null, seriesDirty);
     setPending(aliasCell(row), aliasDirty);
-    setPending(row.querySelector('td.acts'), dirty);
+    setPending(row.querySelector('td.acts'), ready);
     var button = row.querySelector('#add-series, #add-character');
-    setPending(button, dirty);
+    if (button) button.disabled = !ready;
+    setPending(button, ready);
     var discard = row.querySelector('#discard-series, #discard-character');
     if (discard) discard.disabled = !dirty;
+    syncSaveAll();
   }
   function syncDescriptionPending() {
     var field = document.getElementById('draft-description');
@@ -899,11 +906,19 @@ window.krtaDraftEditor = function () {
     });
     return dirty;
   }
+  function rowReadyToSave(edit) {
+    if (!edit) return false;
+    if (edit.pendingDelete) return true;
+    if (!String(edit.name || '').trim()) return false;
+    if (edit.type === 'character' && !String(edit.seriesLabel || '').trim()) return false;
+    return true;
+  }
   function syncSaveAll() {
     var saveButton = document.getElementById('save-all');
     var discardButton = document.getElementById('discard-all');
-    var rowDirty = dirtyRows().length > 0 || descriptionDirty();
-    var anyDirty = rowDirty || addFormsDirty();
+    var savable = dirtyRows().some(function (item) { return rowReadyToSave(item.edit); });
+    var rowDirty = savable || descriptionDirty();
+    var anyDirty = dirtyRows().length > 0 || descriptionDirty() || addFormsDirty();
     if (saveButton) {
       saveButton.disabled = !rowDirty || saveAllBusy;
       setPending(saveButton, rowDirty && !saveAllBusy);
@@ -944,7 +959,7 @@ window.krtaDraftEditor = function () {
       if (item.edit.type === 'character' && row && row.dataset.cascadeRemoved && !row.dataset.userRemoved) {
         return false;
       }
-      return true;
+      return rowReadyToSave(item.edit);
     });
     var cascadeDeletes = pending.filter(function (item) {
       return item.edit.type === 'series' && item.edit.pendingDelete;
@@ -1176,7 +1191,9 @@ window.krtaDraftEditor = function () {
     }
     if (target.dataset.save) {
       if (row.querySelector('[data-conflict]')) return;
-      if (!captureEdit(row)) return;
+      var pendingEdit = captureEdit(row);
+      if (!pendingEdit) return;
+      if (!row.classList.contains('removed') && !rowReadyToSave(pendingEdit)) return;
       if (row.classList.contains('removed')) {
         await save({
           type: type,
@@ -1242,6 +1259,7 @@ window.krtaDraftEditor = function () {
   if (addSeries) {
     addSeries.addEventListener('click', async function () {
       var name = document.getElementById('add-series-name');
+      if (!name || !name.value.trim()) return;
       await save({
         type: 'series',
         action: 'add',
@@ -1255,6 +1273,7 @@ window.krtaDraftEditor = function () {
     addCharacter.addEventListener('click', async function () {
       var name = document.getElementById('add-character-name');
       var seriesKey = document.getElementById('add-character-series');
+      if (!name || !name.value.trim() || !seriesKey || !seriesKey.value.trim()) return;
       await save({
         type: 'character',
         action: 'add',

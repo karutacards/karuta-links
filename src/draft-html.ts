@@ -597,7 +597,7 @@ export function renderDraftEditor(
          <td><input id="add-series-name" aria-label="Name" autocomplete="off"></td>
          <td>${aliasCell('add-series-aliases')}</td>
          <td></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-series">Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-series" disabled>Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
        </tr>`
   const addCharacter = locked
     ? ''
@@ -606,7 +606,7 @@ export function renderDraftEditor(
          <td><input id="add-character-series" aria-label="Series" autocomplete="off"></td>
          <td>${aliasCell('add-character-aliases')}</td>
          <td></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-character">Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-character" disabled>Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
        </tr>`
   return layout(
     `Draft ${draft.id}`,
