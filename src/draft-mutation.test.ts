@@ -50,6 +50,33 @@ describe('draft mutation', () => {
     })
   })
 
+  it('rejects an update when the row did not change', () => {
+    try {
+      applyDraftMutation(
+        series(3),
+        {
+          type: 'series',
+          action: 'update',
+          key: 'new-series',
+          expectedRevision: 3,
+          name: '  New Series  ',
+          aliases: ['Alt']
+        },
+        new Set(['new-series']),
+        '2',
+        'second'
+      )
+      throw new Error('expected no change')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        status: 400,
+        message: 'Nothing about this row changed.'
+      })
+    }
+  })
+
   it('returns 409 CONFLICT when the revision does not match', () => {
     try {
       applyDraftMutation(
@@ -71,6 +98,25 @@ describe('draft mutation', () => {
       expect(error).toMatchObject({ code: 'CONFLICT', status: 409 })
       expect((error as DraftError).entity?.revision).toBe(3)
     }
+  })
+
+  it('resolves a character series from the draft series name', () => {
+    const result = applyDraftMutation(
+      null,
+      { type: 'character', action: 'add', name: 'Hero', seriesKey: 'New Series!' },
+      new Set(),
+      '2',
+      'second',
+      [
+        { key: 'new-series', name: 'New Series' },
+        { key: 'new-series-2', name: 'New Series!' }
+      ]
+    )
+    expect(result.entity).toMatchObject({
+      type: 'character',
+      key: 'hero',
+      seriesKey: 'new-series-2'
+    })
   })
 
   it('returns 409 ENTITY_GONE when the row was deleted', () => {

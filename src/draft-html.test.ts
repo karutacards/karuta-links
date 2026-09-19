@@ -24,6 +24,16 @@ describe('draft HTML', () => {
     const page = renderDraftEditor(draft, { canLock: true, username: 'craig' })
     expect(page).toContain('draft-data')
     expect(page).toContain('Lock draft')
+    expect(page).toContain('id="draft-activity"')
+    expect(page).toContain('id="draft-history"')
+    expect(page).toContain('id="draft-history-kind"')
+    expect(page).toContain('id="draft-history-list"')
+    expect(page).toContain('.activity .actor')
+    expect(page).toContain('.activity .when')
+    expect(page).toContain('id="draft-presence"')
+    expect(page).toContain('/events?after=')
+    expect(page).not.toContain('Unlocked.')
+    expect(page).toContain('data-save="1" disabled')
     expect(page).toContain('Add series')
     expect(page).toContain('Add alias')
     expect(page).toContain('color-scheme: dark')
@@ -41,5 +51,22 @@ describe('draft HTML', () => {
     expect(page).not.toContain('<footer>')
     expect(renderDraftImport()).toContain('krtaDraftImport')
     expect(renderDraftImport()).not.toContain('href="/"')
+  })
+
+  it('shows a lock timestamp only after the draft is locked', () => {
+    const draft: DraftRecord = {
+      id: 2,
+      createdAt: 1,
+      updatedAt: 2,
+      lockedAt: 1_700_000_000_000,
+      lockedBy: '1',
+      series: [],
+      characters: []
+    }
+    const page = renderDraftEditor(draft, { canLock: true, username: 'craig' })
+    expect(page).toContain('Locked ')
+    expect(page).not.toContain('Unlocked.')
+    expect(page).not.toContain('Lock draft')
+    expect(page).toContain('Export CSV')
   })
 })

@@ -1,16 +1,22 @@
 import { parseDraftCatalog } from './draft-catalog'
+import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
 import { applyDraftMutation, type DraftMutation } from './draft-mutation'
 import { allocateId } from './db'
 import {
   DRAFT_SECTION,
   DraftError,
+  type DraftAuditEvent,
   type DraftAuditRow,
   type DraftCharacter,
   type DraftEntity,
   type DraftEntityType,
+  type DraftEventsSnapshot,
+  type DraftPresence,
   type DraftRecord,
   type DraftSeries
 } from './draft-types'
+
+export const PRESENCE_STALE_MS = 10_000
 
 type DraftRow = {
   id: number
@@ -41,6 +47,11 @@ type AuditDbRow = {
   discord_id: string
   username: string
   created_at: number
+}
+
+type PresenceDbRow = {
+  discord_id: string
+  username: string
 }
 
 function parseAliases(raw: string): string[] {
@@ -109,6 +120,30 @@ async function getEntityRow(
 function assertUnlocked(row: DraftRow): void {
   if (row.locked_at) {
     throw new DraftError('LOCKED', 'This draft is locked.', 423)
+  }
+}
+
+function toAuditRow(row: AuditDbRow): DraftAuditRow {
+  return {
+    id: row.id,
+    entityType: row.entity_type as DraftEntityType,
+    entityKey: row.entity_key,
+    action: row.action,
+    beforeJson: row.before_json,
+    afterJson: row.after_json,
+    discordId: row.discord_id,
+    username: row.username,
+    createdAt: row.created_at
+  }
+}
+
+function toAuditEvent(row: AuditDbRow): DraftAuditEvent {
+  const entry = toAuditRow(row)
+  return {
+    ...entry,
+    summary: draftAuditSentence(entry),
+    actor: actorName(entry.username),
+    spans: draftAuditSpans(entry)
   }
 }
 
@@ -240,17 +275,80 @@ export async function listEntityAudit(
      WHERE draft_id = ? AND entity_type = ? AND entity_key = ?
      ORDER BY created_at DESC, id DESC`
   ).bind(draftId, type, key).all<AuditDbRow>()
+  return (result.results ?? []).map(toAuditRow)
+}
+
+export async function listDraftEvents(
+  db: D1Database,
+  draftId: number,
+  after: number
+): Promise<DraftAuditEvent[]> {
+  const cursor = Number.isSafeInteger(after) && after > 0 ? after : 0
+  const result = await db.prepare(
+    `SELECT id, entity_type, entity_key, action, before_json, after_json,
+            discord_id, username, created_at
+     FROM draft_audit
+     WHERE draft_id = ? AND id > ?
+     ORDER BY id ASC`
+  ).bind(draftId, cursor).all<AuditDbRow>()
+  return (result.results ?? []).map(toAuditEvent)
+}
+
+export async function touchDraftPresence(
+  db: D1Database,
+  draftId: number,
+  discordId: string,
+  username: string,
+  now = Date.now()
+): Promise<DraftPresence[]> {
+  const staleBefore = now - PRESENCE_STALE_MS
+  await db.batch([
+    db.prepare(
+      `INSERT INTO draft_presence (draft_id, discord_id, username, last_seen)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(draft_id, discord_id)
+       DO UPDATE SET username = excluded.username, last_seen = excluded.last_seen`
+    ).bind(draftId, discordId, username, now),
+    db.prepare(
+      `DELETE FROM draft_presence WHERE draft_id = ? AND last_seen < ?`
+    ).bind(draftId, staleBefore)
+  ])
+  const result = await db.prepare(
+    `SELECT discord_id, username
+     FROM draft_presence
+     WHERE draft_id = ? AND last_seen >= ?
+     ORDER BY username COLLATE NOCASE, discord_id`
+  ).bind(draftId, staleBefore).all<PresenceDbRow>()
   return (result.results ?? []).map((row) => ({
-    id: row.id,
-    entityType: row.entity_type as DraftEntityType,
-    entityKey: row.entity_key,
-    action: row.action,
-    beforeJson: row.before_json,
-    afterJson: row.after_json,
     discordId: row.discord_id,
-    username: row.username,
-    createdAt: row.created_at
+    username: row.username
   }))
+}
+
+export async function pollDraftEvents(
+  db: D1Database,
+  draftId: number,
+  after: number,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftEventsSnapshot> {
+  const draft = await getDraft(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  const events = await listDraftEvents(db, draftId, after)
+  const presence = await touchDraftPresence(db, draftId, editorId, editorName, now)
+  const lastId = events.at(-1)?.id
+  return {
+    after: lastId ?? (Number.isSafeInteger(after) && after > 0 ? after : 0),
+    events,
+    series: draft.series,
+    characters: draft.characters,
+    presence,
+    lockedAt: draft.lockedAt,
+    lockedBy: draft.lockedBy
+  }
 }
 
 export async function mutateDraftEntity(
@@ -281,7 +379,24 @@ export async function mutateDraftEntity(
      WHERE draft_id = ? AND entity_type = ?`
   ).bind(draftId, mutation.type).all<{ entity_key: string }>()
   const usedKeys = new Set((existing.results ?? []).map((row) => row.entity_key))
-  const result = applyDraftMutation(current, mutation, usedKeys, editorId, editorName)
+  const seriesRows = mutation.type === 'character'
+    ? await db.prepare(
+      `SELECT entity_key, name FROM draft_entities
+       WHERE draft_id = ? AND entity_type = 'series'`
+    ).bind(draftId).all<{ entity_key: string; name: string }>()
+    : { results: [] as { entity_key: string; name: string }[] }
+  const draftSeries = (seriesRows.results ?? []).map((row) => ({
+    key: row.entity_key,
+    name: row.name
+  }))
+  const result = applyDraftMutation(
+    current,
+    mutation,
+    usedKeys,
+    editorId,
+    editorName,
+    draftSeries
+  )
   const statements = [
     db.prepare(`UPDATE drafts SET updated_at = ? WHERE id = ?`).bind(now, draftId)
   ]

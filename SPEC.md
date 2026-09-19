@@ -29,6 +29,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
 | `/api/v1/drafts` | Create a draft from a text catalog (`POST` only) |
 | `/api/v1/drafts/{id}` | Read a draft (`GET`) |
+| `/api/v1/drafts/{id}/events` | Poll new audit rows, current entities, lock state and presence (`GET`) |
 | `/api/v1/drafts/{id}/entities` | One entity mutation (`PATCH`) |
 | `/api/v1/drafts/{id}/entities/{type}/{key}/audit` | Entity audit rows |
 | `/api/v1/drafts/{id}/lock` | Lock a draft (`POST`, lock list only) |
@@ -128,9 +129,11 @@ IDs in `lockIds` can lock a draft. Locked drafts reject edits with `423` and can
 
 Each series or character has a revision. A save sends the revision it started from. A conflict or a delete-while-edit returns `409` with `CONFLICT` or `ENTITY_GONE` plus the current entity. The editor reloads that row. There are no row locks that last while a tab is open.
 
+Open draft tabs poll `GET /api/v1/drafts/{id}/events?after={id}` every two seconds while visible. The response is not cached. New `draft_audit` rows append to a draft-wide Activity list and update other editors' tables. History is the same audit stream filtered to that series or character. Presence is a `draft_presence` heartbeat; rows older than 10 seconds drop off. A remote lock reloads the editor. Unsaved rows are not overwritten.
+
 The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/drafts/import` and `postMessage` from `https://karuta.gswaccess.com`. The import page POSTs `/api/v1/drafts` with the session cookie. It does not use `INGEST_TOKEN`.
 
-Draft HTML is a standalone dark editor. It does not use dump page chrome, a home link or a footer. Series and characters are tables. The first row of each table adds an entity. Alias chips remove on click. Enter locks a new alias. Last edited is a column of Discord mentions. History opens that row's audit.
+Draft HTML is a standalone dark editor. It does not use dump page chrome, a home link or a footer. Series and characters are tables. The first row of each table adds an entity. Alias chips remove on click. Enter locks a new alias. Last edited is a column of Discord mentions. History opens a dialog that names the series or character, then that row's audit with timestamps and the same formatting as Activity. Presence chips sit in the header. Activity is a live rail of complete-sentence audit lines.
 
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 

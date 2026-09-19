@@ -14,13 +14,15 @@ import {
   renderDraftNotFound,
   renderDraftUnavailable
 } from './draft-html'
+import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
 import { type DraftMutation } from './draft-mutation'
 import {
   createDraft,
   getDraft,
   listEntityAudit,
   lockDraft,
-  mutateDraftEntity
+  mutateDraftEntity,
+  pollDraftEvents
 } from './draft-store'
 import { DraftError, type DraftEntityType } from './draft-types'
 import { canLockDrafts, draftsConfig, type DraftsConfig } from './drafts-config'
@@ -48,14 +50,15 @@ function html(body: string, status = 200): Response {
   })
 }
 
-function json(body: unknown, status = 200): Response {
+function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY'
+      'x-frame-options': 'DENY',
+      ...extra
     }
   })
 }
@@ -243,6 +246,58 @@ export function registerDrafts(
     })
   })
 
+  app.get('/api/v1/drafts/:id/events', async (c) => {
+    const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
+    if (auth instanceof Response) {
+      return auth
+    }
+    const id = parsePositiveDraftId(c.req.param('id'))
+    if (id === null) {
+      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
+    }
+    const afterRaw = c.req.query('after')
+    let after = 0
+    if (afterRaw !== undefined && afterRaw !== '') {
+      if (!/^[0-9]+$/.test(afterRaw) || !Number.isSafeInteger(Number(afterRaw))) {
+        return json({ error: 'After must be a non-negative integer.', code: 'INVALID_INPUT' }, 400)
+      }
+      after = Number(afterRaw)
+    }
+    try {
+      const snapshot = await pollDraftEvents(
+        c.env.DB,
+        id,
+        after,
+        auth.session.discordId,
+        auth.session.username
+      )
+      return json({
+        after: snapshot.after,
+        events: snapshot.events.map((entry) => ({
+          id: entry.id,
+          entityType: entry.entityType,
+          entityKey: entry.entityKey,
+          action: entry.action,
+          username: entry.username,
+          createdAt: formatApDate(entry.createdAt),
+          summary: entry.summary,
+          actor: entry.actor,
+          spans: entry.spans
+        })),
+        series: snapshot.series,
+        characters: snapshot.characters,
+        presence: snapshot.presence,
+        lockedAt: snapshot.lockedAt,
+        lockedBy: snapshot.lockedBy
+      }, 200, { 'cache-control': 'no-store' })
+    } catch (error) {
+      if (error instanceof DraftError) {
+        return draftErrorResponse(error)
+      }
+      throw error
+    }
+  })
+
   app.patch('/api/v1/drafts/:id/entities', async (c) => {
     const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
     if (auth instanceof Response) {
@@ -290,7 +345,10 @@ export function registerDrafts(
     const entries = await listEntityAudit(c.env.DB, id, type, key)
     return json({
       entries: entries.map((entry) => ({
-        action: entry.action,
+        id: entry.id,
+        summary: draftAuditSentence(entry),
+        actor: actorName(entry.username),
+        spans: draftAuditSpans(entry),
         username: entry.username,
         createdAt: formatApDate(entry.createdAt)
       }))

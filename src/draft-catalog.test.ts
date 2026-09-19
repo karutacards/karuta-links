@@ -28,4 +28,25 @@ describe('draft catalog', () => {
       characters: [{ name: 'Hero' }]
     })).toThrow(DraftError)
   })
+
+  it('resolves a character series name when two slugs collide', () => {
+    expect(parseDraftCatalog({
+      series: [{ name: 'New Series' }, { name: 'New Series!' }],
+      characters: [{ name: 'Hero', seriesKey: 'New Series!' }]
+    })).toMatchObject({
+      series: [
+        { key: 'new-series', name: 'New Series' },
+        { key: 'new-series-2', name: 'New Series!' }
+      ],
+      characters: [{ key: 'hero', seriesKey: 'new-series-2' }]
+    })
+  })
+
+  it('keeps an unknown series value as a slug', () => {
+    expect(parseDraftCatalog({
+      characters: [{ name: 'Hero', seriesKey: 'Jujutsu Kaisen' }]
+    })).toMatchObject({
+      characters: [{ key: 'hero', seriesKey: 'jujutsu-kaisen' }]
+    })
+  })
 })

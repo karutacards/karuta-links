@@ -40,6 +40,12 @@ describe('draft routes', () => {
     expect(rejected.headers.getSetCookie().some((cookie) => cookie.startsWith(`${NEXT_COOKIE}=`))).toBe(false)
   })
 
+  it('requires a session for draft event polls', async () => {
+    const response = await app.request('http://127.0.0.1:8787/api/v1/drafts/3/events?after=0', {}, testEnv())
+    expect(response.status).toBe(401)
+    expect(response.headers.get('cache-control')).toBeNull()
+  })
+
   it('fails closed when a signed-in user cannot verify access', async () => {
     const cookie = await createSessionCookie(newSession('1', 'tester'), 'test-session-secret', false)
     const response = await app.request(
@@ -49,5 +55,16 @@ describe('draft routes', () => {
     )
     expect(response.status).toBe(503)
     expect(await response.text()).toContain('Draft access could not be verified.')
+  })
+
+  it('fails closed on draft events when access cannot be verified', async () => {
+    const cookie = await createSessionCookie(newSession('1', 'tester'), 'test-session-secret', false)
+    const response = await app.request(
+      'http://127.0.0.1:8787/api/v1/drafts/3/events?after=0',
+      { headers: { Cookie: cookie.split(';')[0] ?? '' } },
+      testEnv()
+    )
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'UNAVAILABLE' })
   })
 })

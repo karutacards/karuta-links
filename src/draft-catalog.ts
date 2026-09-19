@@ -16,6 +16,40 @@ export function draftKey(name: string): string {
     .replace(/ /g, '-')
 }
 
+export type DraftSeriesRef = {
+  key: string
+  name: string
+}
+
+export function resolveDraftSeriesKey(raw: unknown, series: readonly DraftSeriesRef[]): string {
+  if (typeof raw !== 'string') {
+    return ''
+  }
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    return ''
+  }
+  const slug = draftKey(trimmed)
+  const exactKey = series.find((item) => item.key === trimmed)
+  if (exactKey) {
+    return exactKey.key
+  }
+  const lowered = trimmed.toLowerCase()
+  const exactName = series.find((item) => item.name.toLowerCase() === lowered)
+  if (exactName) {
+    return exactName.key
+  }
+  const slugKey = slug ? series.find((item) => item.key === slug) : undefined
+  if (slugKey) {
+    return slugKey.key
+  }
+  const slugName = slug ? series.find((item) => draftKey(item.name) === slug) : undefined
+  if (slugName) {
+    return slugName.key
+  }
+  return slug
+}
+
 export function uniqueDraftKey(name: string, used: Set<string>): string {
   const primary = draftKey(name)
   if (!primary) {
@@ -137,9 +171,9 @@ export function parseDraftCatalog(raw: unknown): {
       throw new DraftError('INVALID_INPUT', 'Each character must be an object.', 400)
     }
     const name = cleanName(item.name)
-    const seriesKey = typeof item.seriesKey === 'string' ? draftKey(item.seriesKey) : ''
+    const seriesKey = resolveDraftSeriesKey(item.seriesKey, series)
     if (!seriesKey) {
-      throw new DraftError('INVALID_INPUT', 'Each character needs a series key.', 400)
+      throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
     }
     const key = cleanKey(item.key, name, usedCharacters)
     usedCharacters.add(key)

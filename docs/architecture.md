@@ -11,6 +11,7 @@ GET  /{slug}          -->  302 /{section}/{id}
 GET  /                <--  recent content dumps
 GET  /api/auth/*      -->  Discord identify (unadvertised)
 GET  /drafts/{id}     -->  OAuth-gated draft editor
+GET  /api/v1/drafts/{id}/events -->  Draft audit cursor, presence heartbeat
 POST /api/v1/drafts   -->  Session cookie, not INGEST_TOKEN
 cron * * * * *        -->  Firestore poll, then D1 + R2
 ```
@@ -21,7 +22,7 @@ karuta.today is a static Pages site. That model cannot accept writes. karuta.car
 
 ## Data
 
-Tables: `sequences`, `documents`, `slugs`, `contest_dumps`, `drafts`, `draft_entities`, `draft_audit`. A dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`. `contest_dumps` records which Card Hunt `eventCounter` values already have a page. Drafts are mutable: one row per draft, one versioned entity per series or character, and an append-only audit stream.
+Tables: `sequences`, `documents`, `slugs`, `contest_dumps`, `drafts`, `draft_entities`, `draft_audit`, `draft_presence`. A dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`. `contest_dumps` records which Card Hunt `eventCounter` values already have a page. Drafts are mutable: one row per draft, one versioned entity per series or character, and an append-only audit stream. Open editors poll that stream and heartbeat `draft_presence`.
 
 Content-dump HTML uses same-origin `/images/cards/…` paths. Those objects are unframed edition art. The Worker reads private R2 `karuta-images` and falls back to Karuta's uncached CloudFront host on a miss.
 
@@ -39,4 +40,4 @@ Discord identify is wired and unadvertised. Start and callback routes live under
 
 ## Rendering
 
-Hono handlers return server-rendered HTML. There is no client application. Escaping is the XSS defense.
+Hono handlers return server-rendered HTML. Dump pages have no client application. The draft editor polls `/api/v1/drafts/{id}/events` while the tab is visible. Escaping is the XSS defense.

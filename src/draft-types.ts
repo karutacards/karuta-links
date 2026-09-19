@@ -65,6 +65,32 @@ export type DraftAuditRow = {
   createdAt: number
 }
 
+export type DraftAuditSpan = {
+  text: string
+  entity?: boolean
+}
+
+export type DraftAuditEvent = DraftAuditRow & {
+  summary: string
+  actor: string
+  spans: DraftAuditSpan[]
+}
+
+export type DraftPresence = {
+  discordId: string
+  username: string
+}
+
+export type DraftEventsSnapshot = {
+  after: number
+  events: DraftAuditEvent[]
+  series: DraftSeries[]
+  characters: DraftCharacter[]
+  presence: DraftPresence[]
+  lockedAt: number | null
+  lockedBy: string | null
+}
+
 export type DraftConflict = {
   code: 'CONFLICT' | 'ENTITY_GONE' | 'LOCKED'
   entity: DraftEntity | null
