@@ -36,9 +36,9 @@ describe('draft CSV', () => {
     }
     expect(draftToCsv(draft)).toBe(
       [
-        'type,action,name,seriesKey,aliases',
-        'series,add,New Series,new-series,Alt|Other',
-        'character,add,Hero,new-series,Champ',
+        'type,action,name,seriesKey,aliases,groups',
+        'series,add,New Series,new-series,Alt|Other,',
+        'character,add,Hero,new-series,Champ,',
         ''
       ].join('\n')
     )
@@ -64,6 +64,6 @@ describe('draft CSV', () => {
       }],
       characters: []
     }
-    expect(draftToCsv(draft)).toContain('series,update,Naruto,naruto,Ninja|Draft Alias')
+    expect(draftToCsv(draft)).toContain('series,update,Naruto,naruto,Ninja|Draft Alias,')
   })
 })

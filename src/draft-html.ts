@@ -40,9 +40,14 @@ function layout(title: string, body: string, script = ''): string {
       --mention-fill: rgba(88, 101, 242, 0.3);
     }
     * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
-      padding: 0.75rem 1rem 1.5rem;
+      padding:
+        max(0.75rem, env(safe-area-inset-top, 0px))
+        max(1rem, env(safe-area-inset-right, 0px))
+        max(1.5rem, env(safe-area-inset-bottom, 0px))
+        max(1rem, env(safe-area-inset-left, 0px));
       font: 0.9375rem/1.35 system-ui, sans-serif;
       background: var(--bg);
       color: var(--ink);
@@ -79,27 +84,33 @@ function layout(title: string, body: string, script = ''): string {
     .workspace {
       display: grid;
       grid-template-areas:
-        "activity"
-        "catalog";
+        "catalog"
+        "activity";
       gap: 1.25rem;
     }
     .catalog { grid-area: catalog; min-width: 0; }
     .activity {
       grid-area: activity;
+      display: flex;
+      flex-direction: column;
+      min-height: 8rem;
+      max-height: min(14rem, 40dvh);
+      overflow: hidden;
       border: 1px solid var(--line);
       background: var(--panel);
       padding: 0.65rem 0.75rem;
-      min-height: 10rem;
-      max-height: 18rem;
-      overflow: auto;
       font-size: 0.75rem;
       line-height: 1.35;
     }
     .activity h2 {
+      flex: none;
       margin: 0 0 0.45rem;
       font-size: 0.8rem;
     }
     .activity ol {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
       list-style: none;
       margin: 0;
       padding: 0;
@@ -107,6 +118,7 @@ function layout(title: string, body: string, script = ''): string {
     .activity li {
       margin: 0 0 0.55rem;
       color: var(--ink);
+      overflow-wrap: anywhere;
     }
     .activity .when {
       display: block;
@@ -126,13 +138,29 @@ function layout(title: string, body: string, script = ''): string {
       .workspace {
         grid-template-columns: minmax(0, 1fr) 18rem;
         grid-template-areas: "catalog activity";
-        align-items: start;
+        align-items: stretch;
       }
-      .activity { max-height: 70vh; }
+      .activity {
+        position: sticky;
+        top: 0.75rem;
+        align-self: stretch;
+        min-height: 0;
+        max-height: calc(100dvh - 2.25rem);
+      }
+    }
+    @media (max-width: 63.99rem) {
+      th.edited, td.edited { display: none; }
+    }
+    @media (max-height: 36rem) {
+      .activity { max-height: min(10rem, 32dvh); }
+    }
+    @media (pointer: coarse) {
+      button, .file, input { min-height: 2.75rem; }
     }
     .lede .meta { margin: 0; }
     h1 { font-size: 1.15rem; margin: 0; }
     h2 { font-size: 0.95rem; margin: 1.15rem 0 0.4rem; }
+    .catalog > h2:first-child { margin-top: 0; }
     p { margin: 0 0 0.6rem; }
     .meta, .copy, .empty { color: var(--muted); }
     .banner[hidden] { display: none; }
@@ -179,6 +207,7 @@ function layout(title: string, body: string, script = ''): string {
       border-collapse: collapse;
     }
     th, td {
+      min-width: 0;
       padding: 0.35rem 0.45rem;
       border-bottom: 1px solid var(--line);
       vertical-align: top;
@@ -197,32 +226,46 @@ function layout(title: string, body: string, script = ''): string {
       background: #2a3344;
       border-color: #5a6578;
     }
-    .name { width: 16rem; }
-    .series { width: 12rem; }
+    .name { width: 12rem; }
+    .series { width: 9rem; }
     .edited {
-      width: 11rem;
-      max-width: 11rem;
+      width: 9rem;
+      max-width: 9rem;
       min-width: 0;
       overflow: hidden;
     }
     .acts {
       position: relative;
       z-index: 1;
-      width: 13rem;
-      white-space: nowrap;
+      width: 8.5rem;
+      white-space: normal;
     }
     .acts-row {
       display: flex;
       align-items: flex-start;
       justify-content: flex-end;
       gap: 0.25rem;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
     }
     .acts-edit {
       display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       align-items: center;
       gap: 0.25rem;
       margin-left: auto;
+    }
+    @media (max-width: 39.99rem) {
+      .name { width: 28%; }
+      .series { width: 22%; }
+      .acts { width: 26%; }
+    }
+    @media (min-width: 64rem) {
+      .name { width: 16rem; }
+      .series { width: 12rem; }
+      .edited { width: 11rem; max-width: 11rem; }
+      .acts { width: 13rem; white-space: nowrap; }
+      .acts-row, .acts-edit { flex-wrap: nowrap; }
     }
     .aliases {
       display: flex;
@@ -285,7 +328,7 @@ function layout(title: string, body: string, script = ''): string {
     }
     .history-dialog {
       width: min(28rem, calc(100vw - 2rem));
-      max-height: min(32rem, calc(100vh - 3rem));
+      max-height: min(32rem, calc(100dvh - 3rem));
       padding: 0;
       border: 1px solid var(--line);
       background: var(--panel);
@@ -326,7 +369,7 @@ function layout(title: string, body: string, script = ''): string {
       margin: 0;
       padding: 0.75rem 0.85rem 1rem;
       overflow: auto;
-      max-height: min(24rem, calc(100vh - 9rem));
+      max-height: min(24rem, calc(100dvh - 9rem));
       font-size: 0.75rem;
       line-height: 1.35;
     }
@@ -427,15 +470,12 @@ export function renderDraftEditor(
        <div class="top-tools">
          <div id="draft-presence" class="presence" aria-label="Editors on this draft"></div>
          ${options.canLock && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
-         ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.csv">Export CSV</a>` : ''}
+         ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.txt">Download</a>` : ''}
+         ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
        </div>
      </div>
      <p id="draft-status" class="banner" role="status" hidden></p>
      <div class="workspace">
-       <aside class="activity" aria-label="Activity">
-         <h2>Activity</h2>
-         <ol id="draft-activity"></ol>
-       </aside>
        <div class="catalog">
          <h2>Series</h2>
          <div class="wrap">
@@ -467,6 +507,10 @@ export function renderDraftEditor(
            </table>
          </div>
        </div>
+       <aside class="activity" aria-label="Activity">
+         <h2>Activity</h2>
+         <ol id="draft-activity"></ol>
+       </aside>
      </div>
      <dialog id="draft-history" class="history-dialog" aria-labelledby="draft-history-kind draft-history-title">
        <div class="history-head">

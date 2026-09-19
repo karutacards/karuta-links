@@ -2,6 +2,8 @@ export const DRAFT_SECTION = 'drafts'
 
 export type DraftEntityType = 'series' | 'character'
 
+export type DraftAuditSubject = DraftEntityType | 'draft'
+
 export type DraftImportAction = 'add' | 'update'
 
 export type DraftSeriesInput = {
@@ -63,7 +65,7 @@ export type DraftRecord = {
 
 export type DraftAuditRow = {
   id: number
-  entityType: DraftEntityType
+  entityType: DraftAuditSubject
   entityKey: string
   action: string
   beforeJson: string | null

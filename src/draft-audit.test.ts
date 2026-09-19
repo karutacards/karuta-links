@@ -95,6 +95,20 @@ describe('draft audit sentences', () => {
       })
     }))).toBe('@craig removed alias Ninja to series Naruto.')
     expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
+      action: 'lock',
+      beforeJson: null,
+      afterJson: null
+    }))).toBe('@craig locked this draft.')
+    expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
+      action: 'unlock',
+      beforeJson: null,
+      afterJson: null
+    }))).toBe('@craig unlocked this draft.')
+    expect(draftAuditSentence(row({
       entityType: 'character',
       entityKey: 'x',
       action: 'delete',

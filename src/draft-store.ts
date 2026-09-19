@@ -9,6 +9,7 @@ import {
   type DraftAuditRow,
   type DraftCharacter,
   type DraftEntity,
+  type DraftAuditSubject,
   type DraftEntityType,
   type DraftEventsSnapshot,
   type DraftPresence,
@@ -127,10 +128,15 @@ function assertUnlocked(row: DraftRow): void {
   }
 }
 
+function auditSubject(value: string): DraftAuditSubject {
+  if (value === 'character' || value === 'draft') return value
+  return 'series'
+}
+
 function toAuditRow(row: AuditDbRow): DraftAuditRow {
   return {
     id: row.id,
-    entityType: row.entity_type as DraftEntityType,
+    entityType: auditSubject(row.entity_type),
     entityKey: row.entity_key,
     action: row.action,
     beforeJson: row.before_json,
@@ -506,10 +512,43 @@ export async function mutateDraftEntity(
   return result.entity
 }
 
+async function readDraftOrThrow(db: D1Database, draftId: number): Promise<DraftRecord> {
+  const draft = await getDraft(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  return draft
+}
+
+async function writeLockAudit(
+  db: D1Database,
+  draftId: number,
+  action: 'lock' | 'unlock',
+  editorId: string,
+  editorName: string,
+  now: number,
+  lockedAt: number | null,
+  lockedBy: string | null
+): Promise<DraftRecord> {
+  await db.batch([
+    db.prepare(
+      `UPDATE drafts SET locked_at = ?, locked_by = ?, updated_at = ? WHERE id = ?`
+    ).bind(lockedAt, lockedBy, now, draftId),
+    db.prepare(
+      `INSERT INTO draft_audit
+       (draft_id, entity_type, entity_key, action, before_json, after_json,
+        discord_id, username, created_at)
+       VALUES (?, 'draft', '', ?, NULL, NULL, ?, ?, ?)`
+    ).bind(draftId, action, editorId, editorName, now)
+  ])
+  return readDraftOrThrow(db, draftId)
+}
+
 export async function lockDraft(
   db: D1Database,
   draftId: number,
   editorId: string,
+  editorName: string,
   now = Date.now()
 ): Promise<DraftRecord> {
   const draft = await getDraftRow(db, draftId)
@@ -517,18 +556,24 @@ export async function lockDraft(
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
   if (draft.locked_at) {
-    const locked = await getDraft(db, draftId)
-    if (!locked) {
-      throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
-    }
-    return locked
+    return readDraftOrThrow(db, draftId)
   }
-  await db.prepare(
-    `UPDATE drafts SET locked_at = ?, locked_by = ?, updated_at = ? WHERE id = ?`
-  ).bind(now, editorId, now, draftId).run()
-  const locked = await getDraft(db, draftId)
-  if (!locked) {
+  return writeLockAudit(db, draftId, 'lock', editorId, editorName, now, now, editorId)
+}
+
+export async function unlockDraft(
+  db: D1Database,
+  draftId: number,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftRecord> {
+  const draft = await getDraftRow(db, draftId)
+  if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
-  return locked
+  if (!draft.locked_at) {
+    return readDraftOrThrow(db, draftId)
+  }
+  return writeLockAudit(db, draftId, 'unlock', editorId, editorName, now, null, null)
 }

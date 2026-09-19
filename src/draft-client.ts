@@ -520,6 +520,15 @@ window.krtaDraftEditor = function () {
       window.location.reload();
       return;
     }
+    if (target.id === 'unlock-draft') {
+      var unlocked = await api('/api/v1/drafts/' + state.id + '/unlock', { method: 'POST', body: '{}' });
+      if (!unlocked.response.ok) {
+        showStatus(status, unlocked.body && unlocked.body.error ? unlocked.body.error : 'The draft could not be unlocked.', true);
+        return;
+      }
+      window.location.reload();
+      return;
+    }
     if (!row) return;
     var type = row.dataset.type;
     var key = row.dataset.key;
@@ -597,7 +606,7 @@ window.krtaDraftEditor = function () {
       var result = await api('/api/v1/drafts/' + state.id + '/events?after=' + after);
       if (!result.response.ok || !result.body) return;
       var body = result.body;
-      if (body.lockedAt && !state.locked) {
+      if (Boolean(body.lockedAt) !== Boolean(state.locked)) {
         window.location.reload();
         return;
       }

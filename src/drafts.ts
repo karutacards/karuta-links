@@ -22,6 +22,7 @@ import {
   listEntityAudit,
   lockDraft,
   mutateDraftEntity,
+  unlockDraft,
   pollDraftEvents
 } from './draft-store'
 import { DraftError, type DraftEntityType } from './draft-types'
@@ -368,7 +369,12 @@ export function registerDrafts(
       return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
     }
     try {
-      const draft = await lockDraft(c.env.DB, id, auth.session.discordId)
+      const draft = await lockDraft(
+        c.env.DB,
+        id,
+        auth.session.discordId,
+        auth.session.username
+      )
       return json({ locked: true, lockedAt: draft.lockedAt })
     } catch (error) {
       if (error instanceof DraftError) {
@@ -378,7 +384,35 @@ export function registerDrafts(
     }
   })
 
-  app.get('/api/v1/drafts/:id/export.csv', async (c) => {
+  app.post('/api/v1/drafts/:id/unlock', async (c) => {
+    const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
+    if (auth instanceof Response) {
+      return auth
+    }
+    if (!canLockDrafts(auth.session.discordId)) {
+      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
+    }
+    const id = parsePositiveDraftId(c.req.param('id'))
+    if (id === null) {
+      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
+    }
+    try {
+      const draft = await unlockDraft(
+        c.env.DB,
+        id,
+        auth.session.discordId,
+        auth.session.username
+      )
+      return json({ locked: false, lockedAt: draft.lockedAt })
+    } catch (error) {
+      if (error instanceof DraftError) {
+        return draftErrorResponse(error)
+      }
+      throw error
+    }
+  })
+
+  app.get('/api/v1/drafts/:id/export.txt', async (c) => {
     const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
     if (auth instanceof Response) {
       return auth
@@ -400,8 +434,8 @@ export function registerDrafts(
     return new Response(draftToCsv(draft), {
       status: 200,
       headers: {
-        'content-type': 'text/csv; charset=utf-8',
-        'content-disposition': `attachment; filename="draft-${id}.csv"`,
+        'content-type': 'text/plain; charset=utf-8',
+        'content-disposition': `attachment; filename="draft-${id}.txt"`,
         'x-content-type-options': 'nosniff',
         'referrer-policy': 'no-referrer',
         'x-frame-options': 'DENY'

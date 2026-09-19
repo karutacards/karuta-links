@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   PRESENCE_STALE_MS,
   listDraftEvents,
+  lockDraft,
   pollDraftEvents,
-  touchDraftPresence
+  touchDraftPresence,
+  unlockDraft
 } from './draft-store'
 
 type Query = {
@@ -150,5 +152,45 @@ describe('draft events store', () => {
     expect(snapshot.lockedBy).toBe('1')
     expect(snapshot.events).toHaveLength(1)
     expect(snapshot.presence).toEqual([{ discordId: '1', username: 'craig' }])
+  })
+
+  it('writes a lock audit row only when the draft was unlocked', async () => {
+    const unlocked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null },
+      entities: []
+    })
+    await lockDraft(unlocked.db, 2, '1', 'craig', 50)
+    expect(unlocked.queries.some((query) => (
+      query.sql.includes('INSERT INTO draft_audit')
+      && query.binds[0] === 2
+      && query.binds[1] === 'lock'
+    ))).toBe(true)
+
+    const alreadyLocked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1' },
+      entities: []
+    })
+    await lockDraft(alreadyLocked.db, 2, '1', 'craig', 50)
+    expect(alreadyLocked.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
+  })
+
+  it('writes an unlock audit row only when the draft was locked', async () => {
+    const locked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1' },
+      entities: []
+    })
+    await unlockDraft(locked.db, 2, '1', 'craig', 50)
+    expect(locked.queries.some((query) => (
+      query.sql.includes('INSERT INTO draft_audit')
+      && query.binds[0] === 2
+      && query.binds[1] === 'unlock'
+    ))).toBe(true)
+
+    const alreadyUnlocked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null },
+      entities: []
+    })
+    await unlockDraft(alreadyUnlocked.db, 2, '1', 'craig', 50)
+    expect(alreadyUnlocked.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
   })
 })

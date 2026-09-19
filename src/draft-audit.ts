@@ -100,6 +100,12 @@ function entity(value: string): DraftAuditSpan {
 }
 
 export function draftAuditSpans(entry: DraftAuditRow): DraftAuditSpan[] {
+  if (entry.action === 'lock') {
+    return [text(' locked this draft.')]
+  }
+  if (entry.action === 'unlock') {
+    return [text(' unlocked this draft.')]
+  }
   const before = parsePayload(entry.beforeJson)
   const after = parsePayload(entry.afterJson)
   const type = entry.entityType
