@@ -51,6 +51,8 @@ describe('draft HTML', () => {
     expect(page).toContain('.alias-chip.removed')
     expect(page).toContain('tr.row.removed td:not(.acts)')
     expect(page).toContain('td.pending')
+    expect(page).toContain('td.conflict')
+    expect(page).toContain('var rebaseDraftPending')
     expect(page).toContain('button.pending:not(:disabled)')
     expect(page).toContain("importAction === 'update'")
     expect(page).toContain('Add series')
