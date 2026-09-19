@@ -157,6 +157,10 @@ function layout(title: string, body: string, script = ''): string {
       font-size: 0.72rem;
     }
     .activity strong { font-weight: 700; }
+    .activity .restore {
+      display: block;
+      margin: 0.3rem 0 0;
+    }
     @media (min-width: 64rem) {
       .workspace {
         grid-template-columns: minmax(0, 1fr) 18rem;
@@ -580,7 +584,7 @@ export function renderDraftEditor(
        </div>
        <aside class="activity" aria-label="Activity">
          <h2>Activity</h2>
-         <ol id="draft-activity"></ol>
+         <ol id="draft-activity"${options.canLock && !locked ? ' data-restore="1"' : ''}></ol>
        </aside>
      </div>
      <dialog id="draft-history" class="history-dialog" aria-labelledby="draft-history-kind draft-history-title">

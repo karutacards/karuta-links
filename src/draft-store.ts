@@ -1,5 +1,11 @@
 import { parseDraftCatalog } from './draft-catalog'
 import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
+import {
+  catalogsMatch,
+  isRestorableAuditAction,
+  replayDraftAudit,
+  restoreIdentityFromCatalog
+} from './draft-restore'
 import { applyDraftMutation, type DraftMutation } from './draft-mutation'
 import { allocateId } from './db'
 import {
@@ -99,7 +105,9 @@ function entityPayload(
       type: entity.type,
       key: entity.key,
       name: entity.name,
-      aliases: entity.aliases
+      aliases: entity.aliases,
+      importAction: entity.importAction,
+      baseAliases: entity.baseAliases
     })
   }
   const names = seriesNameMap(series)
@@ -109,7 +117,9 @@ function entityPayload(
     name: entity.name,
     seriesKey: entity.seriesKey,
     seriesName: names.get(entity.seriesKey) ?? '',
-    aliases: entity.aliases
+    aliases: entity.aliases,
+    importAction: entity.importAction,
+    baseAliases: entity.baseAliases
   })
 }
 
@@ -672,5 +682,120 @@ export async function setDraftDescription(
       now
     )
   ])
+  return readDraftOrThrow(db, draftId)
+}
+
+async function listAllDraftAudit(db: D1Database, draftId: number): Promise<DraftAuditRow[]> {
+  const result = await db.prepare(
+    `SELECT id, entity_type, entity_key, action, before_json, after_json,
+            discord_id, username, created_at
+     FROM draft_audit
+     WHERE draft_id = ?
+     ORDER BY id ASC`
+  ).bind(draftId).all<AuditDbRow>()
+  return (result.results ?? []).map(toAuditRow)
+}
+
+export async function restoreDraft(
+  db: D1Database,
+  draftId: number,
+  eventId: number,
+  editorId: string,
+  editorName: string,
+  now = Date.now()
+): Promise<DraftRecord> {
+  if (!Number.isSafeInteger(eventId) || eventId < 1) {
+    throw new DraftError('INVALID_INPUT', 'Event id must be a positive integer.', 400)
+  }
+  const current = await getDraft(db, draftId)
+  if (!current) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  if (current.lockedAt) {
+    throw new DraftError('LOCKED', 'This draft is locked.', 423)
+  }
+  const audits = await listAllDraftAudit(db, draftId)
+  const target = audits.find((row) => row.id === eventId)
+  if (!target) {
+    throw new DraftError('NOT_FOUND', 'That Activity line is not on this draft.', 404)
+  }
+  if (!isRestorableAuditAction(target.action)) {
+    throw new DraftError('INVALID_INPUT', 'Pick a save in Activity, not a lock.', 400)
+  }
+  const replayed = replayDraftAudit(audits, eventId, restoreIdentityFromCatalog(current))
+  if (catalogsMatch(current, replayed)) {
+    return current
+  }
+  const statements = [
+    db.prepare(`DELETE FROM draft_entities WHERE draft_id = ?`).bind(draftId)
+  ]
+  for (const series of replayed.series) {
+    const revision = (current.series.find((item) => item.key === series.key)?.revision ?? 0) + 1
+    statements.push(
+      db.prepare(
+        `INSERT INTO draft_entities
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         VALUES (?, 'series', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        draftId,
+        series.key,
+        series.name,
+        JSON.stringify(series.aliases),
+        series.importAction,
+        JSON.stringify(series.baseAliases),
+        revision,
+        editorId,
+        editorName
+      )
+    )
+  }
+  for (const character of replayed.characters) {
+    const revision = (current.characters.find((item) => item.key === character.key)?.revision ?? 0) + 1
+    statements.push(
+      db.prepare(
+        `INSERT INTO draft_entities
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         VALUES (?, 'character', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        draftId,
+        character.key,
+        character.name,
+        character.seriesKey,
+        JSON.stringify(character.aliases),
+        character.importAction,
+        JSON.stringify(character.baseAliases),
+        revision,
+        editorId,
+        editorName
+      )
+    )
+  }
+  statements.push(
+    db.prepare(
+      `UPDATE drafts SET description = ?, updated_at = ? WHERE id = ?`
+    ).bind(replayed.description, now, draftId),
+    db.prepare(
+      `INSERT INTO draft_audit
+       (draft_id, entity_type, entity_key, action, before_json, after_json,
+        discord_id, username, created_at)
+       VALUES (?, 'draft', '', 'restore', ?, ?, ?, ?, ?)`
+    ).bind(
+      draftId,
+      JSON.stringify({ eventId: target.id, createdAt: target.createdAt }),
+      JSON.stringify({
+        eventId: target.id,
+        createdAt: target.createdAt,
+        description: replayed.description,
+        series: replayed.series,
+        characters: replayed.characters
+      }),
+      editorId,
+      editorName,
+      now
+    )
+  )
+  await db.batch(statements)
   return readDraftOrThrow(db, draftId)
 }

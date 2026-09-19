@@ -177,6 +177,13 @@ describe('draft audit sentences', () => {
       afterJson: JSON.stringify({ description: '' })
     }))).toBe('@craig cleared the draft description.')
     expect(draftAuditSentence(row({
+      entityType: 'draft',
+      entityKey: '',
+      action: 'restore',
+      beforeJson: JSON.stringify({ eventId: 2, createdAt: 10 }),
+      afterJson: JSON.stringify({ eventId: 2, createdAt: 10 })
+    }))).toBe('@craig restored this draft to an earlier save.')
+    expect(draftAuditSentence(row({
       entityType: 'character',
       entityKey: 'x',
       action: 'delete',

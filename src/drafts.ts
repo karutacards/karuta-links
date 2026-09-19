@@ -23,6 +23,7 @@ import {
   lockDraft,
   mutateDraftEntity,
   pollDraftEvents,
+  restoreDraft,
   setDraftDescription,
   unlockDraft
 } from './draft-store'
@@ -446,6 +447,52 @@ export function registerDrafts(
         auth.session.username
       )
       return json({ locked: false, lockedAt: draft.lockedAt })
+    } catch (error) {
+      if (error instanceof DraftError) {
+        return draftErrorResponse(error)
+      }
+      throw error
+    }
+  })
+
+  app.post('/api/v1/drafts/:id/restore', async (c) => {
+    const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
+    if (auth instanceof Response) {
+      return auth
+    }
+    if (!canLockDrafts(auth.session.discordId)) {
+      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
+    }
+    const id = parsePositiveDraftId(c.req.param('id'))
+    if (id === null) {
+      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
+    }
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
+    }
+    const eventId = body && typeof body === 'object'
+      ? Number((body as { eventId?: unknown }).eventId)
+      : NaN
+    if (!Number.isSafeInteger(eventId) || eventId < 1) {
+      return json({ error: 'Event id must be a positive integer.', code: 'INVALID_INPUT' }, 400)
+    }
+    try {
+      const draft = await restoreDraft(
+        c.env.DB,
+        id,
+        eventId,
+        auth.session.discordId,
+        auth.session.username
+      )
+      return json({
+        restored: true,
+        description: draft.description,
+        series: draft.series,
+        characters: draft.characters
+      })
     } catch (error) {
       if (error instanceof DraftError) {
         return draftErrorResponse(error)

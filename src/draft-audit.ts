@@ -154,6 +154,9 @@ export function draftAuditSpans(
     if (before && !after) return [text(' cleared the draft description.')]
     return [text(' updated the draft description.')]
   }
+  if (entry.action === 'restore') {
+    return [text(' restored this draft to an earlier save.')]
+  }
   const before = parsePayload(entry.beforeJson)
   const after = parsePayload(entry.afterJson)
   const type = entry.entityType

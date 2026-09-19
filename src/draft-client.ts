@@ -160,7 +160,15 @@ function aliasesEqual(left, right) {
   for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
 }
-function activityItem(entry) {
+function canRestoreActivity() {
+  var list = document.getElementById('draft-activity');
+  return !!(list && list.getAttribute('data-restore') === '1');
+}
+function restorableActivity(entry) {
+  if (entry == null || entry.id == null) return false;
+  return entry.action !== 'lock' && entry.action !== 'unlock';
+}
+function activityItem(entry, withRestore) {
   var item = document.createElement('li');
   if (entry.id != null) item.dataset.auditId = String(entry.id);
   var when = document.createElement('time');
@@ -186,6 +194,14 @@ function activityItem(entry) {
     line.append(document.createTextNode(' ' + (entry.summary || '')));
   }
   item.append(when, line);
+  if (withRestore && canRestoreActivity() && restorableActivity(entry)) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'restore';
+    button.dataset.restoreEvent = String(entry.id);
+    button.textContent = 'Restore';
+    item.append(button);
+  }
   return item;
 }
 function presenceKey(list) {
@@ -512,7 +528,7 @@ window.krtaDraftEditor = function () {
     var pin = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
     events.forEach(function (entry) {
       if (entry.id != null && list.querySelector('[data-audit-id="' + entry.id + '"]')) return;
-      list.append(activityItem(entry));
+      list.append(activityItem(entry, true));
       eventLog.push(entry);
     });
     if (pin) list.scrollTop = list.scrollHeight;
@@ -1008,6 +1024,27 @@ window.krtaDraftEditor = function () {
       window.location.reload();
       return;
     }
+    var restoreBtn = target.closest('[data-restore-event]');
+    if (restoreBtn) {
+      if (editorHasPending()) {
+        showStatus(status, 'Save or discard your edits before restoring.', true);
+        return;
+      }
+      if (!window.confirm('Restore this draft to this Activity line? Later saves stay in the log.')) {
+        return;
+      }
+      var restoreId = Number(restoreBtn.getAttribute('data-restore-event'));
+      var restored = await api('/api/v1/drafts/' + state.id + '/restore', {
+        method: 'POST',
+        body: JSON.stringify({ eventId: restoreId })
+      });
+      if (!restored.response.ok) {
+        showStatus(status, restored.body && restored.body.error ? restored.body.error : 'The draft could not be restored.', true);
+        return;
+      }
+      window.location.reload();
+      return;
+    }
     if (!row) return;
     var type = row.dataset.type;
     var key = row.dataset.key;
@@ -1171,11 +1208,16 @@ window.krtaDraftEditor = function () {
         renderPresence(body.presence);
       }
       var catalogEvents = events.filter(function (entry) {
-        return entry.entityType !== 'draft';
+        return entry.entityType !== 'draft' || entry.action === 'restore';
       });
       if (catalogEvents.length) {
         applyCatalog(body.series || [], body.characters || []);
-        syncOpenHistory(catalogEvents);
+        syncOpenHistory(catalogEvents.filter(function (entry) {
+          return entry.entityType !== 'draft';
+        }));
+      }
+      if (events.some(function (entry) { return entry.action === 'restore'; })) {
+        showStatus(status, 'This draft was restored to an earlier save.', false);
       }
     } finally {
       polling = false;
