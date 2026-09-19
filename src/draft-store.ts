@@ -543,6 +543,25 @@ export async function pollDraftEvents(
   }
 }
 
+async function listUsedEntityKeys(
+  db: D1Database,
+  draftId: number,
+  type: DraftEntityType
+): Promise<Set<string>> {
+  const live = await db.prepare(
+    `SELECT entity_key FROM draft_entities
+     WHERE draft_id = ? AND entity_type = ?`
+  ).bind(draftId, type).all<{ entity_key: string }>()
+  const past = await db.prepare(
+    `SELECT DISTINCT entity_key FROM draft_audit
+     WHERE draft_id = ? AND entity_type = ? AND entity_key != ''`
+  ).bind(draftId, type).all<{ entity_key: string }>()
+  const keys = new Set<string>()
+  for (const row of live.results ?? []) keys.add(row.entity_key)
+  for (const row of past.results ?? []) keys.add(row.entity_key)
+  return keys
+}
+
 export async function mutateDraftEntity(
   db: D1Database,
   draftId: number,
@@ -567,11 +586,10 @@ export async function mutateDraftEntity(
     ? await getEntityRow(db, draftId, mutation.type, key)
     : null
   const current = currentRow ? rowToEntity(currentRow) : null
-  const existing = await db.prepare(
-    `SELECT entity_key FROM draft_entities
-     WHERE draft_id = ? AND entity_type = ?`
-  ).bind(draftId, mutation.type).all<{ entity_key: string }>()
-  const usedKeys = new Set((existing.results ?? []).map((row) => row.entity_key))
+  const usedKeys = await listUsedEntityKeys(db, draftId, mutation.type)
+  const reservedSeriesKeys = mutation.type === 'character'
+    ? await listUsedEntityKeys(db, draftId, 'series')
+    : new Set<string>()
   const seriesRows = mutation.type === 'character'
     ? await db.prepare(
       `SELECT entity_key, name FROM draft_entities
@@ -600,7 +618,8 @@ export async function mutateDraftEntity(
     editorId,
     editorName,
     draftSeries,
-    draftCharacters
+    draftCharacters,
+    reservedSeriesKeys
   )
   const batchSaveId = await resolveSaveId(db, draftId, saveId)
   const statements = [

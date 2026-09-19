@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   catalogsMatch,
+  currentEntityHistory,
   groupDraftActivity,
   isRestorableAuditAction,
   isSaveAuditAction,
@@ -253,5 +254,25 @@ describe('draft activity restore replay', () => {
       }],
       characters: []
     })).toBe(true)
+  })
+
+  it('starts entity history at the latest live add', () => {
+    const rows = [
+      { id: 1, action: 'add', entityType: 'character', entityKey: 'test' },
+      { id: 2, action: 'delete', entityType: 'character', entityKey: 'test' },
+      { id: 3, action: 'add', entityType: 'character', entityKey: 'test' },
+      { id: 4, action: 'update', entityType: 'character', entityKey: 'other' }
+    ]
+    expect(currentEntityHistory(rows, 'character', 'test').map((row) => row.id)).toEqual([3])
+  })
+
+  it('keeps the restored life when a later add of the same key is dimmed', () => {
+    const rows = [
+      { id: 1, action: 'add', entityType: 'character', entityKey: 'test' },
+      { id: 2, action: 'delete', entityType: 'character', entityKey: 'test' },
+      { id: 3, action: 'add', entityType: 'character', entityKey: 'test' },
+      { id: 4, action: 'restore', targetId: 1 }
+    ]
+    expect(currentEntityHistory(rows, 'character', 'test').map((row) => row.id)).toEqual([1])
   })
 })

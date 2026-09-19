@@ -283,6 +283,42 @@ describe('draft mutation', () => {
     }
   })
 
+  it('mints a new key when the name slug was already used', () => {
+    const result = applyDraftMutation(
+      null,
+      { type: 'character', action: 'add', name: 'Hero', seriesKey: 'New Series' },
+      new Set(['hero']),
+      '2',
+      'second',
+      [{ key: 'new-series', name: 'New Series' }]
+    )
+    expect(result.entity).toMatchObject({
+      type: 'character',
+      key: 'hero-2',
+      name: 'Hero'
+    })
+  })
+
+  it('adopts a deleted series name under a new key', () => {
+    const result = applyDraftMutation(
+      null,
+      { type: 'character', action: 'add', name: 'Hero', seriesKey: 'Missing' },
+      new Set(),
+      '2',
+      'second',
+      [{ key: 'new-series', name: 'New Series' }],
+      [],
+      new Set(['missing'])
+    )
+    expect(result.entity).toMatchObject({
+      seriesKey: 'missing-2'
+    })
+    expect(result.adoptedSeries).toMatchObject({
+      key: 'missing-2',
+      name: 'Missing'
+    })
+  })
+
   it('rejects a name or alias that is too long', () => {
     try {
       applyDraftMutation(

@@ -140,6 +140,29 @@ export function liveActivityIds(rows: readonly {
   return live
 }
 
+export function currentEntityHistory<T extends {
+  id?: number
+  action?: string
+  entityType?: string
+  entityKey?: string
+}>(rows: readonly T[], type: string, key: string): T[] {
+  const live = new Set(liveActivityIds(rows))
+  const ofKey = rows
+    .filter((row) => (
+      row.entityType === type
+      && row.entityKey === key
+      && row.id != null
+      && live.has(row.id)
+    ))
+    .slice()
+    .sort((left, right) => (left.id ?? 0) - (right.id ?? 0))
+  let start = 0
+  ofKey.forEach((row, index) => {
+    if (row.action === 'add' || row.action === 'import') start = index
+  })
+  return ofKey.slice(start)
+}
+
 export function restoreIdentityFromCatalog(
   catalog: Pick<DraftRecord, 'series' | 'characters'>
 ): DraftRestoreIdentity[] {

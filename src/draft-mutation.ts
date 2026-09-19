@@ -104,7 +104,8 @@ function adoptSeries(
   raw: unknown,
   series: readonly DraftSeriesRef[],
   editorId: string,
-  editorName: string
+  editorName: string,
+  usedSeriesKeys: Set<string>
 ): { seriesKey: string; adopted?: DraftSeries } {
   const resolved = resolveDraftSeriesKey(raw, series)
   if (resolved) {
@@ -114,10 +115,12 @@ function adoptSeries(
     return { seriesKey: '' }
   }
   const name = cleanDraftName(raw)
-  const key = draftKey(name)
-  if (!key) {
+  if (!draftKey(name)) {
     return { seriesKey: '' }
   }
+  const reserved = new Set(usedSeriesKeys)
+  series.forEach((item) => reserved.add(item.key))
+  const key = uniqueDraftKey(name, reserved)
   return {
     seriesKey: key,
     adopted: {
@@ -165,7 +168,8 @@ export function applyDraftMutation(
   editorId: string,
   editorName: string,
   draftSeries: readonly DraftSeriesRef[] = [],
-  draftCharacters: readonly DraftCharacterRef[] = []
+  draftCharacters: readonly DraftCharacterRef[] = [],
+  reservedSeriesKeys: Set<string> = new Set()
 ): MutationResult {
   switch (mutation.action) {
     case 'add':
@@ -176,7 +180,8 @@ export function applyDraftMutation(
         editorId,
         editorName,
         draftSeries,
-        draftCharacters
+        draftCharacters,
+        reservedSeriesKeys
       )
     case 'update':
       return updateEntity(
@@ -185,7 +190,8 @@ export function applyDraftMutation(
         editorId,
         editorName,
         draftSeries,
-        draftCharacters
+        draftCharacters,
+        reservedSeriesKeys
       )
     case 'delete':
       return deleteEntity(current, mutation)
@@ -203,7 +209,8 @@ function addEntity(
   editorId: string,
   editorName: string,
   draftSeries: readonly DraftSeriesRef[],
-  draftCharacters: readonly DraftCharacterRef[]
+  draftCharacters: readonly DraftCharacterRef[],
+  reservedSeriesKeys: Set<string>
 ): MutationResult {
   if (current) {
     throw new DraftError(
@@ -235,7 +242,13 @@ function addEntity(
     }
     return { action: 'add', entity, before: null, after: entity }
   }
-  const adopted = adoptSeries(mutation.seriesKey, draftSeries, editorId, editorName)
+  const adopted = adoptSeries(
+    mutation.seriesKey,
+    draftSeries,
+    editorId,
+    editorName,
+    reservedSeriesKeys
+  )
   if (!adopted.seriesKey) {
     throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
   }
@@ -267,7 +280,8 @@ function updateEntity(
   editorId: string,
   editorName: string,
   draftSeries: readonly DraftSeriesRef[],
-  draftCharacters: readonly DraftCharacterRef[]
+  draftCharacters: readonly DraftCharacterRef[],
+  reservedSeriesKeys: Set<string>
 ): MutationResult {
   if (!current) {
     throw new DraftError('ENTITY_GONE', 'That entity was deleted.', 409, null)
@@ -286,7 +300,7 @@ function updateEntity(
   const series = asSeries(current)
   const character = asCharacter(current)
   const adopted = character && mutation.seriesKey !== undefined && mutation.seriesKey.trim() !== ''
-    ? adoptSeries(mutation.seriesKey, draftSeries, editorId, editorName)
+    ? adoptSeries(mutation.seriesKey, draftSeries, editorId, editorName, reservedSeriesKeys)
     : { seriesKey: character ? character.seriesKey : '', adopted: undefined }
   const nextSeriesKey = character
     ? adopted.seriesKey

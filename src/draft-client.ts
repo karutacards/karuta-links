@@ -1,8 +1,12 @@
 import { DRAFT_FONT_CODE_POINTS } from './draft-glyphs'
 import { rebaseDraftPending } from './draft-rebase'
-import { groupDraftActivity, lastEventIdForSave, liveActivityIds } from './draft-restore'
+import { currentEntityHistory, groupDraftActivity, lastEventIdForSave, liveActivityIds } from './draft-restore'
 
-export const DRAFT_CLIENT_SCRIPT = 'var FONT_CODE_POINTS = ' + JSON.stringify(DRAFT_FONT_CODE_POINTS) + ';\nvar rebaseDraftPending = ' + rebaseDraftPending.toString() + ';\nvar lastEventIdForSave = ' + lastEventIdForSave.toString() + ';\nvar groupDraftActivity = ' + groupDraftActivity.toString() + ';\nvar liveActivityIds = ' + liveActivityIds.toString() + ';\n' + `
+function inlineClientFn(fn: { toString(): string }): string {
+  return fn.toString().replace(/__name\([^;)]*\);?/g, '')
+}
+
+export const DRAFT_CLIENT_SCRIPT = 'var FONT_CODE_POINTS = ' + JSON.stringify(DRAFT_FONT_CODE_POINTS) + ';\nvar rebaseDraftPending = ' + inlineClientFn(rebaseDraftPending) + ';\nvar lastEventIdForSave = ' + inlineClientFn(lastEventIdForSave) + ';\nvar groupDraftActivity = ' + inlineClientFn(groupDraftActivity) + ';\nvar liveActivityIds = ' + inlineClientFn(liveActivityIds) + ';\nvar currentEntityHistory = ' + inlineClientFn(currentEntityHistory) + ';\n' + `
 var MAX_NAME = 200;
 var MAX_ALIAS = 200;
 var FONT_GLYPHS = {};
@@ -67,7 +71,7 @@ function seriesOnDraft(label, series) {
   return false;
 }
 function seriesHintText() {
-  return 'This series is not on this draft. Confirm it matches the exact name in Karuta. It will be treated as an update.';
+  return 'This series is not on this draft. If the name matches Karuta exactly, it will be treated as an update.';
 }
 function aliasEditorHtml() {
   return '<div class="aliases">' +
@@ -520,19 +524,15 @@ window.krtaDraftEditor = function () {
     });
   }
   function syncSeriesHint(input) {
-    if (!input) return;
-    var td = input.closest('td');
-    if (!td) return;
-    var hint = td.querySelector('.field-hint');
-    if (!hint) {
-      hint = document.createElement('p');
-      hint.className = 'field-hint';
-      td.append(hint);
-    }
-    var label = input.value.trim();
+    var label = input && input.value ? input.value.trim() : '';
     var warn = !!label && !seriesOnDraft(label, state.series);
-    hint.hidden = !warn;
-    hint.textContent = warn ? seriesHintText() : '';
+    var hint = seriesHintText();
+    var showingHint = status && status.textContent === hint;
+    if (warn) {
+      if (!status || status.hidden || showingHint) showStatus(status, hint, 'warn');
+      return;
+    }
+    if (showingHint) showStatus(status, '', false);
   }
   function captureEdit(row) {
     var type = row.dataset.type;
@@ -554,7 +554,12 @@ window.krtaDraftEditor = function () {
       || seriesDirty
       || pendingValue.trim() !== ''
       || !aliasesEqual(aliases, entity.aliases);
-    if (!dirty) return null;
+    if (!dirty
+      && !row.querySelector('td.pending')
+      && !row.dataset.userRemoved
+      && !row.dataset.cascadeRemoved) {
+      return null;
+    }
     return {
       type: type,
       key: key,
@@ -688,9 +693,7 @@ window.krtaDraftEditor = function () {
     if (edit.type === 'series') syncCascadeDeletes();
   }
   function historyEntries(type, key) {
-    return eventLog.filter(function (entry) {
-      return entry.entityType === type && entry.entityKey === key;
-    }).slice().reverse();
+    return currentEntityHistory(eventLog, type, key).slice().reverse();
   }
   function fillHistoryList(list, type, key) {
     var rows = historyEntries(type, key);
@@ -848,17 +851,11 @@ window.krtaDraftEditor = function () {
       li.classList.toggle('superseded', li.dataset.auditId != null && !live[Number(li.dataset.auditId)]);
     });
   }
-  function syncOpenHistory(events) {
+  function syncOpenHistory() {
     var dialog = document.getElementById('draft-history');
     var list = document.getElementById('draft-history-list');
     if (!dialog || !list || !dialog.open || !historyTarget) return;
-    events.forEach(function (entry) {
-      if (entry.entityType !== historyTarget.type || entry.entityKey !== historyTarget.key) return;
-      if (entry.id != null && list.querySelector('[data-audit-id="' + entry.id + '"]')) return;
-      var empty = list.querySelector('li:not([data-audit-id])');
-      if (empty) empty.remove();
-      list.prepend(activityItem(entry));
-    });
+    fillHistoryList(list, historyTarget.type, historyTarget.key);
   }
   function entityBaseline(entity) {
     if (!entity) return null;
@@ -939,7 +936,7 @@ window.krtaDraftEditor = function () {
     markConflicts(findRow(edit.type, edit.key), result.conflicts);
     return result;
   }
-  function applyCatalog(series, characters) {
+  function snapshotPending() {
     var pending = [];
     document.querySelectorAll('tr.row').forEach(function (row) {
       var edit = captureEdit(row);
@@ -949,25 +946,38 @@ window.krtaDraftEditor = function () {
         base: entityBaseline(findEntity(edit.type, edit.key))
       });
     });
-    state.series = series;
-    state.characters = characters;
-    render();
+    return pending;
+  }
+  function rebasePending(pending) {
     var gone = 0;
     var conflicted = 0;
-    pending.forEach(function (item) {
+    (pending || []).forEach(function (item) {
       var theirs = entityBaseline(findEntity(item.edit.type, item.edit.key));
       var result = applyPendingRebase(item.edit, item.base, theirs);
       if (result.gone) gone += 1;
       else if (result.conflicts.length) conflicted += 1;
     });
-    if (gone) {
-      showStatus(status, gone === 1
+    return { gone: gone, conflicted: conflicted };
+  }
+  function refreshCatalog() {
+    var pending = snapshotPending();
+    render();
+    return rebasePending(pending);
+  }
+  function applyCatalog(series, characters) {
+    var pending = snapshotPending();
+    state.series = series;
+    state.characters = characters;
+    render();
+    var result = rebasePending(pending);
+    if (result.gone) {
+      showStatus(status, result.gone === 1
         ? 'Someone else deleted a row you were editing.'
         : 'Someone else deleted rows you were editing.', true);
       return;
     }
-    if (conflicted) {
-      showStatus(status, conflicted === 1
+    if (result.conflicted) {
+      showStatus(status, result.conflicted === 1
         ? 'Someone else changed a field you also edited.'
         : 'Someone else changed fields you also edited.', true);
     }
@@ -1098,6 +1108,7 @@ window.krtaDraftEditor = function () {
       body: JSON.stringify(payload)
     });
     if (result.response.status === 409 || result.response.status === 423) {
+      var pending = snapshotPending();
       var prior = entityBaseline(findEntity(mutation.type, mutation.key));
       var liveRow = findRow(mutation.type, mutation.key);
       var edit = liveRow ? captureEdit(liveRow) : null;
@@ -1108,9 +1119,9 @@ window.krtaDraftEditor = function () {
       }
       if (!silent) {
         render();
-        if (result.body && result.body.code === 'CONFLICT' && edit) {
-          var rebased = applyPendingRebase(edit, prior, entityBaseline(result.body.entity));
-          showStatus(status, rebased.conflicts.length
+        var rebasedAll = rebasePending(pending);
+        if (result.body && result.body.code === 'CONFLICT') {
+          showStatus(status, rebasedAll.conflicted
             ? 'Someone else changed a field you also edited.'
             : 'Someone else updated this row. Your other edits are still pending.', true);
         } else {
@@ -1139,7 +1150,7 @@ window.krtaDraftEditor = function () {
       replaceEntity(result.body.entity);
     }
     if (!silent) {
-      render();
+      refreshCatalog();
       showStatus(status, cascadeCount
         ? (cascadeCount === 1
           ? 'Saved. Deleted this series and 1 character.'
@@ -1266,7 +1277,7 @@ window.krtaDraftEditor = function () {
       }
     }
     saveAllBusy = false;
-    render();
+    refreshCatalog();
     rebased.forEach(function (item) {
       var next = applyPendingRebase(item.edit, item.base, item.theirs);
       if (next.conflicts.length) conflicted += 1;
@@ -1492,8 +1503,8 @@ window.krtaDraftEditor = function () {
           }).length;
           if (assigned) {
             var question = assigned === 1
-              ? 'Delete ' + seriesName + ' and the 1 character on this series?'
-              : 'Delete ' + seriesName + ' and the ' + assigned + ' characters on this series?';
+              ? 'Delete series "' + seriesName + '" and the 1 character assigned to it in this draft?'
+              : 'Delete series "' + seriesName + '" and the ' + assigned + ' characters assigned to it in this draft?';
             if (!window.confirm(question)) return;
           }
         }
@@ -1648,7 +1659,7 @@ window.krtaDraftEditor = function () {
       });
       if (catalogEvents.length) {
         applyCatalog(body.series || [], body.characters || []);
-        syncOpenHistory(catalogEvents);
+        syncOpenHistory();
       }
     } finally {
       polling = false;

@@ -113,21 +113,18 @@ function layout(title: string, body: string, script = ''): string {
       min-height: 1.5rem;
     }
     .review {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      z-index: 1;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
-      gap: 0.45rem 0.75rem;
-      max-width: min(22rem, calc(100vw - 2rem));
-      margin: 0.45rem 0 0;
-      pointer-events: none;
+      gap: 0.4rem 0.65rem;
+      width: 100%;
+      margin: 0.35rem 0 0;
     }
-    .review-actions,
-    .review-votes { pointer-events: auto; }
+    .review-votes {
+      flex: 1 1 100%;
+      justify-content: flex-end;
+    }
     .review-prompt {
       margin: 0;
       max-width: 9rem;
@@ -342,7 +339,6 @@ function layout(title: string, body: string, script = ''): string {
     @media (max-width: 63.99rem) {
       th.edited, td.edited { display: none; }
       .review-prompt { display: none; }
-      .review { max-width: min(16rem, calc(100vw - 2rem)); }
     }
     @media (max-height: 36rem) {
       .activity-panel { max-height: min(10rem, 32dvh); }
@@ -513,7 +509,7 @@ function layout(title: string, body: string, script = ''): string {
     .acts {
       position: relative;
       z-index: 1;
-      width: 16.5rem;
+      width: 20rem;
       white-space: nowrap;
     }
     .acts-row {
@@ -525,8 +521,12 @@ function layout(title: string, body: string, script = ''): string {
     }
     .row .acts-row {
       display: grid;
-      grid-template-columns: max-content max-content max-content max-content;
-      justify-content: end;
+      grid-template-columns: 4.7rem 4.7rem 4.7rem 4.7rem;
+      justify-content: start;
+      justify-items: stretch;
+    }
+    .row .acts-row button {
+      width: 100%;
     }
     .acts-edit {
       display: contents;
@@ -592,7 +592,7 @@ function layout(title: string, body: string, script = ''): string {
       .name { width: 16rem; }
       .series { width: 12rem; }
       .edited { width: 11rem; max-width: 11rem; }
-      .acts { width: 16.5rem; }
+      .acts { width: 20rem; }
     }
     .aliases {
       display: flex;
