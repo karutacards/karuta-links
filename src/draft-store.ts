@@ -1,4 +1,5 @@
 import { parseDraftCatalog } from './draft-catalog'
+import { discordAvatarUrl, parseDiscordAvatar } from './discord-avatar'
 import { sortDraftEntities } from './draft-sort'
 import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
 import {
@@ -70,6 +71,7 @@ type AuditDbRow = {
 type PresenceDbRow = {
   discord_id: string
   username: string
+  avatar?: string
 }
 
 type ReviewDbRow = {
@@ -432,29 +434,33 @@ export async function touchDraftPresence(
   draftId: number,
   discordId: string,
   username: string,
-  now = Date.now()
+  now = Date.now(),
+  avatar = ''
 ): Promise<DraftPresence[]> {
   const staleBefore = now - PRESENCE_STALE_MS
+  const hash = parseDiscordAvatar(avatar)
   await db.batch([
     db.prepare(
-      `INSERT INTO draft_presence (draft_id, discord_id, username, last_seen)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO draft_presence (draft_id, discord_id, username, avatar, last_seen)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(draft_id, discord_id)
-       DO UPDATE SET username = excluded.username, last_seen = excluded.last_seen`
-    ).bind(draftId, discordId, username, now),
+       DO UPDATE SET username = excluded.username, last_seen = excluded.last_seen,
+         avatar = CASE WHEN excluded.avatar = '' THEN draft_presence.avatar ELSE excluded.avatar END`
+    ).bind(draftId, discordId, username, hash, now),
     db.prepare(
       `DELETE FROM draft_presence WHERE draft_id = ? AND last_seen < ?`
     ).bind(draftId, staleBefore)
   ])
   const result = await db.prepare(
-    `SELECT discord_id, username
+    `SELECT discord_id, username, avatar
      FROM draft_presence
      WHERE draft_id = ? AND last_seen >= ?
      ORDER BY username COLLATE NOCASE, discord_id`
   ).bind(draftId, staleBefore).all<PresenceDbRow>()
   return (result.results ?? []).map((row) => ({
     discordId: row.discord_id,
-    username: row.username
+    username: row.username,
+    avatarUrl: discordAvatarUrl(row.discord_id, row.avatar ?? '')
   }))
 }
 
@@ -520,14 +526,15 @@ export async function pollDraftEvents(
   after: number,
   editorId: string,
   editorName: string,
-  now = Date.now()
+  now = Date.now(),
+  editorAvatar = ''
 ): Promise<DraftEventsSnapshot> {
   const draft = await getDraft(db, draftId)
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
   const events = await listDraftEvents(db, draftId, after, draft.series)
-  const presence = await touchDraftPresence(db, draftId, editorId, editorName, now)
+  const presence = await touchDraftPresence(db, draftId, editorId, editorName, now, editorAvatar)
   const reviews = await listDraftReviews(db, draftId)
   const lastId = events.at(-1)?.id
   return {

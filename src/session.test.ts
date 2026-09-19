@@ -31,6 +31,32 @@ describe('session', () => {
     const session = newSession('135694375647838208', 'bry.n')
     const signed = await signSession(session, SECRET)
     await expect(verifySession(signed, SECRET)).resolves.toEqual(session)
+    expect(session.avatar).toBe('')
+  })
+
+  it('accepts a legacy session cookie that has no avatar field', async () => {
+    const payload = JSON.stringify({
+      discordId: '1',
+      username: 'tester',
+      issuedAt: 1,
+      sessionId: 'legacy'
+    })
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    )
+    const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
+    const hex = Array.from(new Uint8Array(signature))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+    await expect(verifySession(`${payload}.${hex}`, SECRET)).resolves.toMatchObject({
+      discordId: '1',
+      username: 'tester',
+      avatar: ''
+    })
   })
 
   it('rejects a tampered payload', async () => {

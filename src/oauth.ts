@@ -17,6 +17,7 @@ import {
   NEXT_COOKIE,
   STATE_COOKIE
 } from './session'
+import { parseDiscordAvatar } from './discord-avatar'
 
 const DISCORD_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize'
 const DISCORD_TOKEN_URL = 'https://discord.com/api/v10/oauth2/token'
@@ -111,18 +112,18 @@ async function exchangeCode(
 
 async function identifyUser(
   accessToken: string
-): Promise<{ id: string; username: string } | null> {
+): Promise<{ id: string; username: string; avatar: string } | null> {
   const response = await fetch(DISCORD_IDENTIFY_URL, {
     headers: { authorization: `Bearer ${accessToken}` }
   })
   if (!response.ok) {
     return null
   }
-  const payload = (await response.json()) as { id?: unknown; username?: unknown }
+  const payload = (await response.json()) as { id?: unknown; username?: unknown; avatar?: unknown }
   if (typeof payload.id !== 'string' || typeof payload.username !== 'string') {
     return null
   }
-  return { id: payload.id, username: payload.username }
+  return { id: payload.id, username: payload.username, avatar: parseDiscordAvatar(payload.avatar) }
 }
 
 export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
@@ -193,7 +194,7 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
       )
     }
     const sessionCookie = await createSessionCookie(
-      newSession(user.id, user.username),
+      newSession(user.id, user.username, user.avatar),
       c.env.SESSION_SECRET,
       https
     )

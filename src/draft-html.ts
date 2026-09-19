@@ -109,8 +109,16 @@ function layout(title: string, body: string, script = ''): string {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.2rem;
       min-height: 1.5rem;
+    }
+    .presence-avatar {
+      display: block;
+      width: 1.375rem;
+      height: 1.375rem;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--line);
     }
     .review {
       display: flex;

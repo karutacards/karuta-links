@@ -1,3 +1,5 @@
+import { parseDiscordAvatar } from './discord-avatar'
+
 export const SESSION_COOKIE = 'session'
 export const STATE_COOKIE = 'oauth_state'
 export const NEXT_COOKIE = 'oauth_next'
@@ -8,6 +10,7 @@ export const NEXT_MAX_AGE = 600
 export interface Session {
   discordId: string
   username: string
+  avatar: string
   issuedAt: number
   sessionId: string
 }
@@ -116,7 +119,13 @@ export async function verifySession(
     ) {
       return null
     }
-    return parsed
+    return {
+      discordId: parsed.discordId,
+      username: parsed.username,
+      avatar: parseDiscordAvatar(parsed.avatar),
+      issuedAt: parsed.issuedAt,
+      sessionId: parsed.sessionId
+    }
   } catch {
     return null
   }
@@ -178,10 +187,11 @@ export async function getSession(
   return verifySession(value, secret)
 }
 
-export function newSession(discordId: string, username: string): Session {
+export function newSession(discordId: string, username: string, avatar = ''): Session {
   return {
     discordId,
     username,
+    avatar: parseDiscordAvatar(avatar),
     issuedAt: Date.now(),
     sessionId: crypto.randomUUID()
   }

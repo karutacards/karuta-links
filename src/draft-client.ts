@@ -339,7 +339,7 @@ function activityGroup(group) {
 }
 function presenceKey(list) {
   return (list || []).map(function (person) {
-    return String(person.discordId || '') + '\\0' + String(person.username || '');
+    return String(person.discordId || '') + '\\0' + String(person.username || '') + '\\0' + String(person.avatarUrl || '');
   }).sort().join('\\n');
 }
 function reviewKey(list) {
@@ -781,7 +781,17 @@ window.krtaDraftEditor = function () {
     if (!root) return;
     root.replaceChildren();
     (list || []).forEach(function (person) {
-      root.append(mentionNode(person.username));
+      var name = reviewVoterName(person.username);
+      var img = document.createElement('img');
+      img.className = 'presence-avatar';
+      img.src = person.avatarUrl || '';
+      img.alt = name;
+      img.title = name;
+      img.width = 22;
+      img.height = 22;
+      img.referrerPolicy = 'no-referrer';
+      img.decoding = 'async';
+      root.append(img);
     });
   }
   function ownReview() {

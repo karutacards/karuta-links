@@ -121,7 +121,11 @@ describe('draft events store', () => {
       presence: [{ discord_id: '1', username: 'craig' }]
     })
     await expect(touchDraftPresence(db, 2, '1', 'craig', now)).resolves.toEqual([
-      { discordId: '1', username: 'craig' }
+      {
+        discordId: '1',
+        username: 'craig',
+        avatarUrl: 'https://cdn.discordapp.com/embed/avatars/0.png'
+      }
     ])
     expect(queries.some((query) => query.sql.includes('INSERT INTO draft_presence'))).toBe(true)
     expect(queries.some((query) => (
@@ -164,7 +168,11 @@ describe('draft events store', () => {
     expect(snapshot.lockedBy).toBe('1')
     expect(snapshot.description).toBe('')
     expect(snapshot.events).toHaveLength(1)
-    expect(snapshot.presence).toEqual([{ discordId: '1', username: 'craig' }])
+    expect(snapshot.presence).toEqual([{
+      discordId: '1',
+      username: 'craig',
+      avatarUrl: 'https://cdn.discordapp.com/embed/avatars/0.png'
+    }])
     expect(snapshot.reviews).toEqual([])
   })
 

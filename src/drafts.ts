@@ -334,7 +334,9 @@ export function registerDrafts(
         id,
         after,
         auth.session.discordId,
-        auth.session.username
+        auth.session.username,
+        Date.now(),
+        auth.session.avatar
       )
       return json({
         after: snapshot.after,

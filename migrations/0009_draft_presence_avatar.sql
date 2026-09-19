@@ -1,0 +1,1 @@
+ALTER TABLE draft_presence ADD COLUMN avatar TEXT NOT NULL DEFAULT '';

@@ -96,6 +96,7 @@ export type DraftAuditEvent = DraftAuditRow & {
 export type DraftPresence = {
   discordId: string
   username: string
+  avatarUrl: string
 }
 
 export type DraftReviewDecision = 'approve' | 'reject'
