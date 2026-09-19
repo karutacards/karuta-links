@@ -338,6 +338,26 @@ function presenceKey(list) {
     return String(person.discordId || '') + '\\0' + String(person.username || '');
   }).sort().join('\\n');
 }
+function reviewKey(list) {
+  return (list || []).map(function (item) {
+    return String(item.discordId || '') + '\\0' + String(item.decision || '');
+  }).sort().join('\\n');
+}
+function reviewIcon(kind) {
+  var ns = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  var path = document.createElementNS(ns, 'path');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.75');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  path.setAttribute('d', kind === 'approve' ? 'M3 8.5 6.5 12 13 4.5' : 'M4 4l8 8M12 4l-8 8');
+  svg.appendChild(path);
+  return svg;
+}
 function entityRow(entity, locked, series) {
   var wrap = document.createElement('tr');
   wrap.className = 'row';
@@ -468,6 +488,9 @@ window.krtaDraftEditor = function () {
   var descriptionBusy = false;
   var saveAllBusy = false;
   if (typeof state.description !== 'string') state.description = '';
+  if (!Array.isArray(state.reviews)) state.reviews = [];
+  var lastReviews = reviewKey(state.reviews);
+  var reviewBusy = false;
   function findEntity(type, key) {
     var list = type === 'series' ? state.series : state.characters;
     for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
@@ -737,6 +760,58 @@ window.krtaDraftEditor = function () {
     (list || []).forEach(function (person) {
       root.append(mentionNode(person.username));
     });
+  }
+  function ownReview() {
+    var mine = String(state.discordId || '');
+    if (!mine) return null;
+    for (var i = 0; i < state.reviews.length; i++) {
+      if (state.reviews[i].discordId === mine) return state.reviews[i].decision;
+    }
+    return null;
+  }
+  function renderReviews(list) {
+    state.reviews = Array.isArray(list) ? list : [];
+    lastReviews = reviewKey(state.reviews);
+    var approveBtn = document.getElementById('review-approve');
+    var rejectBtn = document.getElementById('review-reject');
+    var mine = ownReview();
+    if (approveBtn) approveBtn.classList.toggle('is-on', mine === 'approve');
+    if (rejectBtn) rejectBtn.classList.toggle('is-on', mine === 'reject');
+    var root = document.getElementById('draft-review-votes');
+    if (!root) return;
+    root.replaceChildren();
+    state.reviews.forEach(function (item) {
+      var chip = document.createElement('span');
+      chip.className = 'review-vote';
+      chip.setAttribute(
+        'aria-label',
+        item.decision === 'approve'
+          ? discordHandle(item.username) + ' approved.'
+          : discordHandle(item.username) + ' rejected.'
+      );
+      chip.append(mentionNode(item.username));
+      var flag = document.createElement('span');
+      flag.className = 'review-flag is-' + item.decision;
+      flag.append(reviewIcon(item.decision));
+      chip.append(flag);
+      root.append(chip);
+    });
+  }
+  async function submitReview(next) {
+    if (!state.locked || reviewBusy) return;
+    var current = ownReview();
+    var decision = current === next ? null : next;
+    reviewBusy = true;
+    var result = await api('/api/v1/drafts/' + state.id + '/review', {
+      method: 'POST',
+      body: JSON.stringify({ decision: decision })
+    });
+    reviewBusy = false;
+    if (!result.response.ok) {
+      showStatus(status, result.body && result.body.error ? result.body.error : 'The review could not be saved.', true);
+      return;
+    }
+    renderReviews(result.body && result.body.reviews);
   }
   function appendActivity(events) {
     var list = document.getElementById('draft-activity');
@@ -1333,6 +1408,11 @@ window.krtaDraftEditor = function () {
       window.location.reload();
       return;
     }
+    var reviewBtn = target.closest('[data-review]');
+    if (reviewBtn && (reviewBtn.id === 'review-approve' || reviewBtn.id === 'review-reject')) {
+      await submitReview(reviewBtn.getAttribute('data-review'));
+      return;
+    }
     var restoreBtn = target.closest('[data-restore-event]');
     if (restoreBtn) {
       if (editorHasPending()) {
@@ -1554,13 +1634,16 @@ window.krtaDraftEditor = function () {
       applyDescription(body.description);
       var nextPresence = presenceKey(body.presence);
       var presenceChanged = nextPresence !== lastPresence;
-      if (!events.length && !presenceChanged && body.after === after) return;
+      var nextReviews = reviewKey(body.reviews);
+      var reviewsChanged = nextReviews !== lastReviews;
+      if (!events.length && !presenceChanged && !reviewsChanged && body.after === after) return;
       if (events.length) appendActivity(events);
       if (typeof body.after === 'number') after = body.after;
       if (presenceChanged) {
         lastPresence = nextPresence;
         renderPresence(body.presence);
       }
+      if (reviewsChanged) renderReviews(body.reviews);
       var catalogEvents = events.filter(function (entry) {
         return entry.entityType !== 'draft';
       });
@@ -1624,6 +1707,7 @@ window.krtaDraftEditor = function () {
   }
   bindCatalogSort('series-sort');
   bindCatalogSort('character-sort');
+  renderReviews(state.reviews);
   render();
   window.addEventListener('resize', syncActivityHeight);
   var catalog = document.querySelector('.catalog');

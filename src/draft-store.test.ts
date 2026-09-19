@@ -5,6 +5,7 @@ import {
   lockDraft,
   pollDraftEvents,
   setDraftDescription,
+  setDraftReview,
   touchDraftPresence,
   restoreDraft,
   unlockDraft
@@ -20,6 +21,7 @@ function mockDb(options: {
   entities?: Record<string, unknown>[]
   audit?: Record<string, unknown>[]
   presence?: Record<string, unknown>[]
+  reviews?: Record<string, unknown>[]
 }): { db: D1Database; queries: Query[] } {
   const queries: Query[] = []
   const db = {
@@ -46,6 +48,7 @@ function mockDb(options: {
           if (sql.includes('FROM draft_audit')) return { results: options.audit ?? [] }
           if (sql.includes('FROM draft_entities')) return { results: options.entities ?? [] }
           if (sql.includes('FROM draft_presence')) return { results: options.presence ?? [] }
+          if (sql.includes('FROM draft_reviews')) return { results: options.reviews ?? [] }
           return { results: [] }
         },
         async run() {
@@ -162,6 +165,7 @@ describe('draft events store', () => {
     expect(snapshot.description).toBe('')
     expect(snapshot.events).toHaveLength(1)
     expect(snapshot.presence).toEqual([{ discordId: '1', username: 'craig' }])
+    expect(snapshot.reviews).toEqual([])
   })
 
   it('writes a lock audit row only when the draft was unlocked', async () => {
@@ -202,6 +206,41 @@ describe('draft events store', () => {
     })
     await unlockDraft(alreadyUnlocked.db, 2, '1', 'craig', 50)
     expect(alreadyUnlocked.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
+  })
+
+  it('stores a review only on a locked draft', async () => {
+    const open = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null },
+      entities: []
+    })
+    await expect(setDraftReview(open.db, 2, '1', 'craig', 'approve', 50)).rejects.toMatchObject({
+      code: 'LOCKED'
+    })
+
+    const locked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1' },
+      entities: [],
+      reviews: [{ discord_id: '1', username: 'craig', decision: 'approve' }]
+    })
+    const reviews = await setDraftReview(locked.db, 2, '1', 'craig', 'approve', 50)
+    expect(locked.queries.some((query) => query.sql.includes('INSERT INTO draft_reviews'))).toBe(true)
+    expect(reviews).toEqual([{ discordId: '1', username: 'craig', decision: 'approve' }])
+
+    const cleared = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1' },
+      entities: []
+    })
+    await setDraftReview(cleared.db, 2, '1', 'craig', null, 50)
+    expect(cleared.queries.some((query) => query.sql.includes('DELETE FROM draft_reviews'))).toBe(true)
+  })
+
+  it('clears reviews when the draft is unlocked', async () => {
+    const locked = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: 9, locked_by: '1' },
+      entities: []
+    })
+    await unlockDraft(locked.db, 2, '1', 'craig', 50)
+    expect(locked.queries.some((query) => query.sql.includes('DELETE FROM draft_reviews'))).toBe(true)
   })
 
   it('writes a describe audit row only when the description changes', async () => {

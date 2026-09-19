@@ -1,5 +1,5 @@
 import { escapeHtml } from './escape'
-import type { DraftRecord } from './draft-types'
+import type { DraftRecord, DraftReview } from './draft-types'
 import { formatApDate } from './html'
 import { DRAFT_CLIENT_SCRIPT } from './draft-client'
 
@@ -104,6 +104,65 @@ function layout(title: string, body: string, script = ''): string {
       gap: 0.3rem;
       min-height: 1.5rem;
     }
+    .review {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem 0.75rem;
+      margin: 0 0 0.75rem;
+    }
+    .review-prompt {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .review-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .review-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      min-height: 2rem;
+      padding: 0;
+      color: var(--muted);
+    }
+    .review-mark svg {
+      display: block;
+      width: 1rem;
+      height: 1rem;
+      pointer-events: none;
+    }
+    .review-mark.is-on[data-review="approve"] {
+      color: var(--ok);
+      border-color: var(--ok);
+    }
+    .review-mark.is-on[data-review="reject"] {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .review-votes {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .review-vote {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .review-flag {
+      width: 0.85rem;
+      height: 0.85rem;
+      color: var(--muted);
+    }
+    .review-flag.is-approve { color: var(--ok); }
+    .review-flag.is-reject { color: var(--danger); }
+    .review-flag svg { display: block; width: 100%; height: 100%; }
     .workspace {
       display: grid;
       grid-template-areas:
@@ -694,7 +753,12 @@ export function renderDraftImport(): string {
 
 export function renderDraftEditor(
   draft: DraftRecord,
-  options: { canLock: boolean; username: string }
+  options: {
+    canLock: boolean
+    username: string
+    discordId?: string
+    reviews?: DraftReview[]
+  }
 ): string {
   const locked = Boolean(draft.lockedAt)
   const lockLine = locked && draft.lockedAt
@@ -705,9 +769,11 @@ export function renderDraftEditor(
     locked,
     canLock: options.canLock,
     username: options.username,
+    discordId: options.discordId || '',
     description: draft.description,
     series: draft.series,
-    characters: draft.characters
+    characters: draft.characters,
+    reviews: options.reviews ?? []
   }
   const addSeries = locked
     ? ''
@@ -742,6 +808,18 @@ export function renderDraftEditor(
          ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
        </div>
      </div>
+     ${locked ? `<div id="draft-review" class="review">
+       <p class="review-prompt">Ready for import?</p>
+       <div class="review-actions">
+         <button type="button" id="review-approve" class="review-mark" data-review="approve" aria-label="Approve" title="Approve">
+           <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6.5 12 13 4.5"/></svg>
+         </button>
+         <button type="button" id="review-reject" class="review-mark" data-review="reject" aria-label="Reject" title="Reject">
+           <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/></svg>
+         </button>
+       </div>
+       <div id="draft-review-votes" class="review-votes" aria-label="Import reviews"></div>
+     </div>` : ''}
      ${options.canLock
        ? `<textarea id="draft-description" class="draft-note" aria-label="Draft description" maxlength="1000" placeholder="Add a description.">${escapeHtml(draft.description)}</textarea>`
        : `<p id="draft-description-view" class="draft-note-view"${draft.description ? '' : ' hidden'}>${escapeHtml(draft.description)}</p>`}

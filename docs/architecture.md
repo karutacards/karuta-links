@@ -11,7 +11,8 @@ GET  /{slug}          -->  302 /{section}/{id}
 GET  /                <--  recent content dumps
 GET  /api/auth/*      -->  Discord identify (unadvertised)
 GET  /drafts/{id}     -->  OAuth-gated draft editor
-GET  /api/v1/drafts/{id}/events -->  Draft audit cursor, presence heartbeat
+GET  /api/v1/drafts/{id}/events -->  Draft audit cursor, presence, reviews
+POST /api/v1/drafts/{id}/review -->  Approve or reject a locked draft
 POST /api/v1/drafts   -->  Session cookie, not INGEST_TOKEN
 cron * * * * *        -->  Firestore poll, then D1 + R2
 ```
@@ -22,7 +23,7 @@ karuta.today is a static Pages site. That model cannot accept writes. karuta.car
 
 ## Data
 
-Tables: `sequences`, `documents`, `slugs`, `contest_dumps`, `drafts`, `draft_entities`, `draft_audit`, `draft_presence`. A dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`. `contest_dumps` records which Card Hunt `eventCounter` values already have a page. Drafts are mutable: one row per draft, one versioned entity per series or character, and an append-only audit stream that also records lock, unlock, description changes and importer creates. An imported entity keeps `import_action` and `base_aliases` so live rows export as updates. Open editors poll that stream and heartbeat `draft_presence`.
+Tables: `sequences`, `documents`, `slugs`, `contest_dumps`, `drafts`, `draft_entities`, `draft_audit`, `draft_presence`, `draft_reviews`. A dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`. `contest_dumps` records which Card Hunt `eventCounter` values already have a page. Drafts are mutable: one row per draft, one versioned entity per series or character, and an append-only audit stream that also records lock, unlock, description changes and importer creates. An imported entity keeps `import_action` and `base_aliases` so live rows export as updates. Open editors poll that stream and heartbeat `draft_presence`. A locked draft stores per-user import reviews on `draft_reviews` until unlock.
 
 Content-dump HTML uses same-origin `/images/cards/…` paths. Those objects are unframed edition art. The Worker reads private R2 `karuta-images` and falls back to Karuta's uncached CloudFront host on a miss.
 

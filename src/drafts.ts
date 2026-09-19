@@ -19,12 +19,14 @@ import { type DraftMutation } from './draft-mutation'
 import {
   createDraft,
   getDraft,
+  listDraftReviews,
   listEntityAudit,
   lockDraft,
   mutateDraftEntity,
   pollDraftEvents,
   restoreDraft,
   setDraftDescription,
+  setDraftReview,
   unlockDraft
 } from './draft-store'
 import { DraftError, type DraftEntityType } from './draft-types'
@@ -130,6 +132,16 @@ function parseMutation(body: unknown): DraftMutation {
   }
 }
 
+function parseReviewDecision(body: unknown): 'approve' | 'reject' | null {
+  if (!body || typeof body !== 'object') {
+    throw new DraftError('INVALID_INPUT', 'Body must be JSON.', 400)
+  }
+  const decision = (body as { decision?: unknown }).decision
+  if (decision === null) return null
+  if (decision === 'approve' || decision === 'reject') return decision
+  throw new DraftError('INVALID_INPUT', 'Decision must be approve, reject or null.', 400)
+}
+
 function parseOptionalSaveId(body: unknown): number | null {
   if (!body || typeof body !== 'object') return null
   const value = (body as { saveId?: unknown }).saveId
@@ -210,7 +222,9 @@ export function registerDrafts(
     }
     return html(renderDraftEditor(draft, {
       canLock: canLockDrafts(auth.session.discordId),
-      username: auth.session.username
+      username: auth.session.username,
+      discordId: auth.session.discordId,
+      reviews: await listDraftReviews(c.env.DB, id)
     }))
   })
 
@@ -340,6 +354,7 @@ export function registerDrafts(
         series: snapshot.series,
         characters: snapshot.characters,
         presence: snapshot.presence,
+        reviews: snapshot.reviews,
         lockedAt: snapshot.lockedAt,
         lockedBy: snapshot.lockedBy,
         description: snapshot.description
@@ -418,6 +433,38 @@ export function registerDrafts(
         targetId: restoreTargetId(entry.afterJson) ?? restoreTargetId(entry.beforeJson)
       }))
     })
+  })
+
+  app.post('/api/v1/drafts/:id/review', async (c) => {
+    const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
+    if (auth instanceof Response) {
+      return auth
+    }
+    const id = parsePositiveDraftId(c.req.param('id'))
+    if (id === null) {
+      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
+    }
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
+    }
+    try {
+      const reviews = await setDraftReview(
+        c.env.DB,
+        id,
+        auth.session.discordId,
+        auth.session.username,
+        parseReviewDecision(body)
+      )
+      return json({ reviews })
+    } catch (error) {
+      if (error instanceof DraftError) {
+        return draftErrorResponse(error)
+      }
+      throw error
+    }
   })
 
   app.post('/api/v1/drafts/:id/lock', async (c) => {

@@ -23,6 +23,8 @@ import {
   type DraftEventsSnapshot,
   type DraftPresence,
   type DraftRecord,
+  type DraftReview,
+  type DraftReviewDecision,
   type DraftSeries
 } from './draft-types'
 
@@ -68,6 +70,12 @@ type AuditDbRow = {
 type PresenceDbRow = {
   discord_id: string
   username: string
+}
+
+type ReviewDbRow = {
+  discord_id: string
+  username: string
+  decision: string
 }
 
 function parseAliases(raw: string): string[] {
@@ -450,6 +458,62 @@ export async function touchDraftPresence(
   }))
 }
 
+function toDraftReview(row: ReviewDbRow): DraftReview | null {
+  if (row.decision !== 'approve' && row.decision !== 'reject') return null
+  return {
+    discordId: row.discord_id,
+    username: row.username,
+    decision: row.decision
+  }
+}
+
+export async function listDraftReviews(
+  db: D1Database,
+  draftId: number
+): Promise<DraftReview[]> {
+  const result = await db.prepare(
+    `SELECT discord_id, username, decision
+     FROM draft_reviews
+     WHERE draft_id = ?
+     ORDER BY username COLLATE NOCASE, discord_id`
+  ).bind(draftId).all<ReviewDbRow>()
+  return (result.results ?? []).flatMap((row) => {
+    const review = toDraftReview(row)
+    return review ? [review] : []
+  })
+}
+
+export async function setDraftReview(
+  db: D1Database,
+  draftId: number,
+  editorId: string,
+  editorName: string,
+  decision: DraftReviewDecision | null,
+  now = Date.now()
+): Promise<DraftReview[]> {
+  const draft = await getDraftRow(db, draftId)
+  if (!draft) {
+    throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+  }
+  if (!draft.locked_at) {
+    throw new DraftError('LOCKED', 'Lock this draft before reviewing it.', 409)
+  }
+  if (decision === null) {
+    await db.prepare(
+      `DELETE FROM draft_reviews WHERE draft_id = ? AND discord_id = ?`
+    ).bind(draftId, editorId).run()
+  } else {
+    await db.prepare(
+      `INSERT INTO draft_reviews (draft_id, discord_id, username, decision, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(draft_id, discord_id)
+       DO UPDATE SET username = excluded.username, decision = excluded.decision,
+                     updated_at = excluded.updated_at`
+    ).bind(draftId, editorId, editorName, decision, now).run()
+  }
+  return listDraftReviews(db, draftId)
+}
+
 export async function pollDraftEvents(
   db: D1Database,
   draftId: number,
@@ -464,6 +528,7 @@ export async function pollDraftEvents(
   }
   const events = await listDraftEvents(db, draftId, after, draft.series)
   const presence = await touchDraftPresence(db, draftId, editorId, editorName, now)
+  const reviews = await listDraftReviews(db, draftId)
   const lastId = events.at(-1)?.id
   return {
     after: lastId ?? (Number.isSafeInteger(after) && after > 0 ? after : 0),
@@ -471,6 +536,7 @@ export async function pollDraftEvents(
     series: draft.series,
     characters: draft.characters,
     presence,
+    reviews,
     lockedAt: draft.lockedAt,
     lockedBy: draft.lockedBy,
     description: draft.description
@@ -732,7 +798,10 @@ async function writeLockAudit(
        (draft_id, entity_type, entity_key, action, before_json, after_json,
         discord_id, username, created_at)
        VALUES (?, 'draft', '', ?, NULL, NULL, ?, ?, ?)`
-    ).bind(draftId, action, editorId, editorName, now)
+    ).bind(draftId, action, editorId, editorName, now),
+    db.prepare(
+      `DELETE FROM draft_reviews WHERE draft_id = ?`
+    ).bind(draftId)
   ])
   return readDraftOrThrow(db, draftId)
 }

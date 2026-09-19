@@ -98,12 +98,21 @@ export type DraftPresence = {
   username: string
 }
 
+export type DraftReviewDecision = 'approve' | 'reject'
+
+export type DraftReview = {
+  discordId: string
+  username: string
+  decision: DraftReviewDecision
+}
+
 export type DraftEventsSnapshot = {
   after: number
   events: DraftAuditEvent[]
   series: DraftSeries[]
   characters: DraftCharacter[]
   presence: DraftPresence[]
+  reviews: DraftReview[]
   lockedAt: number | null
   lockedBy: string | null
   description: string
