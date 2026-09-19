@@ -224,4 +224,25 @@ describe('draft HTML', () => {
     expect(page).toContain('id="hide-draft">Unhide<')
     expect(page).not.toContain('id="hide-draft">Hide<')
   })
+
+  it('emits client JavaScript that parses', () => {
+    const draft: DraftRecord = {
+      id: 2,
+      createdAt: 1,
+      updatedAt: 2,
+      lockedAt: null,
+      lockedBy: null,
+      hiddenAt: null,
+      accessOverride: null,
+      description: '',
+      series: [],
+      characters: []
+    }
+    const page = renderDraftEditor(draft, { canAdmin: true, username: 'craig' })
+    const start = page.indexOf('<script>')
+    const end = page.indexOf('</script>', start)
+    const script = page.slice(start + 8, end)
+    expect(() => new Function(script)).not.toThrow()
+    expect(script).toContain("join('\\n')")
+  })
 })

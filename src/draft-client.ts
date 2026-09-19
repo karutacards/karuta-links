@@ -1737,7 +1737,7 @@ window.krtaDraftEditor = function () {
     var globalOpt = access.querySelector('option[value=""]');
     if (globalOpt) globalOpt.textContent = 'Global (' + (global.access || 'open') + ')';
     access.value = override.access || '';
-    whitelist.value = Array.isArray(override.whitelist) ? override.whitelist.join('\n') : '';
+    whitelist.value = Array.isArray(override.whitelist) ? override.whitelist.join('\\n') : '';
     whitelist.placeholder = 'One Discord ID per line. Leave empty to use the global list.';
     var creds = override.credentials || {};
     var globalCreds = global.credentials || {};
@@ -1757,7 +1757,7 @@ window.krtaDraftEditor = function () {
     var override = {};
     if (access && access.value) override.access = access.value;
     if (whitelist && whitelist.value.replace(/^\s+|\s+$/g, '')) {
-      override.whitelist = whitelist.value.split(/\r?\n/).map(function (id) {
+      override.whitelist = whitelist.value.split(/\\r?\\n/).map(function (id) {
         return id.replace(/^\s+|\s+$/g, '');
       }).filter(Boolean);
     }
