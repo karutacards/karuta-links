@@ -167,7 +167,13 @@ function addEntity(
         lastEditorName: editorName
       }
   if (entity.type === 'character' && !entity.seriesKey) {
-    throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
+    throw new DraftError(
+      'INVALID_INPUT',
+      mutation.seriesKey && mutation.seriesKey.trim()
+        ? 'That series is not on this draft.'
+        : 'Each character needs a series.',
+      400
+    )
   }
   return { action: 'add', entity, before: null, after: entity }
 }
@@ -213,7 +219,13 @@ function updateEntity(
   } else if (character) {
     const seriesKey = nextSeriesKey
     if (!seriesKey) {
-      throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
+      throw new DraftError(
+        'INVALID_INPUT',
+        mutation.seriesKey && mutation.seriesKey.trim()
+          ? 'That series is not on this draft.'
+          : 'Each character needs a series.',
+        400
+      )
     }
     next = {
       ...character,
@@ -244,6 +256,9 @@ function deleteEntity(current: DraftEntity | null, mutation: DraftMutation): Mut
       409,
       current
     )
+  }
+  if (current.importAction === 'update') {
+    throw new DraftError('INVALID_INPUT', 'This live row cannot be deleted.', 400)
   }
   return { action: 'delete', entity: null, before: current, after: null }
 }

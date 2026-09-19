@@ -53,7 +53,7 @@ export function resolveDraftSeriesKey(raw: unknown, series: readonly DraftSeries
   if (slugName) {
     return slugName.key
   }
-  return slug
+  return ''
 }
 
 export function uniqueDraftKey(name: string, used: Set<string>): string {

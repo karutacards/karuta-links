@@ -256,6 +256,14 @@ function layout(title: string, body: string, script = ''): string {
     td.pending input {
       border-color: var(--accent);
     }
+    td.conflict,
+    tbody tr:hover td.conflict {
+      background: rgba(242, 139, 130, 0.16);
+      box-shadow: inset 0 0 0 1px var(--danger);
+    }
+    td.conflict input {
+      border-color: var(--danger);
+    }
     .draft-note.pending {
       border-color: var(--accent);
       background: rgba(232, 194, 122, 0.12);
