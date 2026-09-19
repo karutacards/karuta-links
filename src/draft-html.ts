@@ -91,10 +91,18 @@ function layout(title: string, body: string, script = ''): string {
       color: var(--muted);
     }
     .draft-note-view[hidden] { display: none; }
+    .top-side {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      min-width: 0;
+    }
     .top-tools {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
+      justify-content: flex-end;
       gap: 0.45rem 0.65rem;
     }
     .presence {
@@ -105,16 +113,29 @@ function layout(title: string, body: string, script = ''): string {
       min-height: 1.5rem;
     }
     .review {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      z-index: 1;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
+      justify-content: flex-end;
       gap: 0.45rem 0.75rem;
-      margin: 0 0 0.75rem;
+      max-width: min(22rem, calc(100vw - 2rem));
+      margin: 0.45rem 0 0;
+      pointer-events: none;
     }
+    .review-actions,
+    .review-votes { pointer-events: auto; }
     .review-prompt {
       margin: 0;
+      max-width: 9rem;
+      overflow: hidden;
       color: var(--muted);
       font-size: 0.8rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .review-actions {
       display: flex;
@@ -154,6 +175,13 @@ function layout(title: string, body: string, script = ''): string {
       display: inline-flex;
       align-items: center;
       gap: 0.25rem;
+      min-width: 0;
+    }
+    .review-vote .mention {
+      max-width: 6.5rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .review-flag {
       width: 0.85rem;
@@ -313,6 +341,8 @@ function layout(title: string, body: string, script = ''): string {
     }
     @media (max-width: 63.99rem) {
       th.edited, td.edited { display: none; }
+      .review-prompt { display: none; }
+      .review { max-width: min(16rem, calc(100vw - 2rem)); }
     }
     @media (max-height: 36rem) {
       .activity-panel { max-height: min(10rem, 32dvh); }
@@ -556,6 +586,7 @@ function layout(title: string, body: string, script = ''): string {
         overflow-x: auto;
       }
       .row .acts-row { justify-content: start; }
+      .review-vote .mention { display: none; }
     }
     @media (min-width: 64rem) {
       .name { width: 16rem; }
@@ -762,7 +793,7 @@ export function renderDraftEditor(
 ): string {
   const locked = Boolean(draft.lockedAt)
   const lockLine = locked && draft.lockedAt
-    ? `<p class="meta">Locked ${escapeHtml(formatApDate(draft.lockedAt))}.</p>`
+    ? `<p class="meta">Locked on ${escapeHtml(formatApDate(draft.lockedAt))}.</p>`
     : ''
   const payload = {
     id: draft.id,
@@ -799,27 +830,29 @@ export function renderDraftEditor(
          <h1>Draft ${draft.id}</h1>
          ${lockLine}
        </div>
-       <div class="top-tools">
-         <div id="draft-presence" class="presence" aria-label="Editors on this draft"></div>
-         ${!locked ? '<button type="button" id="save-all" disabled>Save all</button>' : ''}
-         ${!locked ? '<button type="button" id="discard-all" disabled>Discard all</button>' : ''}
-         ${options.canLock && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
-         ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.txt">Download</a>` : ''}
-         ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
+       <div class="top-side">
+         <div class="top-tools">
+           <div id="draft-presence" class="presence" aria-label="Editors on this draft"></div>
+           ${!locked ? '<button type="button" id="save-all" disabled>Save all</button>' : ''}
+           ${!locked ? '<button type="button" id="discard-all" disabled>Discard all</button>' : ''}
+           ${options.canLock && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
+           ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.txt">Download</a>` : ''}
+           ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}
+         </div>
+         ${locked ? `<div id="draft-review" class="review">
+           <p class="review-prompt" title="Ready to publish?">Ready to publish?</p>
+           <div class="review-actions">
+             <button type="button" id="review-approve" class="review-mark" data-review="approve" aria-label="Approve" title="Approve">
+               <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6.5 12 13 4.5"/></svg>
+             </button>
+             <button type="button" id="review-reject" class="review-mark" data-review="reject" aria-label="Reject" title="Reject">
+               <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/></svg>
+             </button>
+           </div>
+           <div id="draft-review-votes" class="review-votes" aria-label="Publish reviews"></div>
+         </div>` : ''}
        </div>
      </div>
-     ${locked ? `<div id="draft-review" class="review">
-       <p class="review-prompt">Ready for import?</p>
-       <div class="review-actions">
-         <button type="button" id="review-approve" class="review-mark" data-review="approve" aria-label="Approve" title="Approve">
-           <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6.5 12 13 4.5"/></svg>
-         </button>
-         <button type="button" id="review-reject" class="review-mark" data-review="reject" aria-label="Reject" title="Reject">
-           <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/></svg>
-         </button>
-       </div>
-       <div id="draft-review-votes" class="review-votes" aria-label="Import reviews"></div>
-     </div>` : ''}
      ${options.canLock
        ? `<textarea id="draft-description" class="draft-note" aria-label="Draft description" maxlength="1000" placeholder="Add a description.">${escapeHtml(draft.description)}</textarea>`
        : `<p id="draft-description-view" class="draft-note-view"${draft.description ? '' : ' hidden'}>${escapeHtml(draft.description)}</p>`}

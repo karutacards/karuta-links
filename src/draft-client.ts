@@ -783,12 +783,11 @@ window.krtaDraftEditor = function () {
     state.reviews.forEach(function (item) {
       var chip = document.createElement('span');
       chip.className = 'review-vote';
-      chip.setAttribute(
-        'aria-label',
-        item.decision === 'approve'
-          ? discordHandle(item.username) + ' approved.'
-          : discordHandle(item.username) + ' rejected.'
-      );
+      var voteLabel = item.decision === 'approve'
+        ? discordHandle(item.username) + ' approved.'
+        : discordHandle(item.username) + ' rejected.';
+      chip.setAttribute('aria-label', voteLabel);
+      chip.title = voteLabel;
       chip.append(mentionNode(item.username));
       var flag = document.createElement('span');
       flag.className = 'review-flag is-' + item.decision;
