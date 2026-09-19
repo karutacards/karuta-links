@@ -384,12 +384,14 @@ export function registerDrafts(
       return json({ error: 'That entity does not exist.', code: 'NOT_FOUND' }, 404)
     }
     const entries = await listEntityAudit(c.env.DB, id, type, key)
+    const draft = await getDraft(c.env.DB, id)
+    const series = draft?.series ?? []
     return json({
       entries: entries.map((entry) => ({
         id: entry.id,
-        summary: draftAuditSentence(entry),
+        summary: draftAuditSentence(entry, series),
         actor: actorName(entry.username),
-        spans: draftAuditSpans(entry),
+        spans: draftAuditSpans(entry, series),
         username: entry.username,
         createdAt: formatApDate(entry.createdAt)
       }))

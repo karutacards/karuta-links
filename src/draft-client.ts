@@ -20,6 +20,7 @@ function collectAliases(root) {
   var values = [];
   var seen = {};
   root.querySelectorAll('[data-alias]').forEach(function (node) {
+    if (aliasChipRemoved(node)) return;
     var alias = node.getAttribute('data-alias') || '';
     var key = aliasKey(alias);
     if (!key || seen[key]) return;
@@ -27,6 +28,28 @@ function collectAliases(root) {
     values.push(alias);
   });
   return values;
+}
+function aliasChipRemoved(node) {
+  if (!node) return false;
+  return node.hasAttribute('data-alias-removed') || node.classList.contains('removed');
+}
+function restoreAliasChip(node) {
+  var chip = node && node.hasAttribute('data-alias-remove')
+    ? node
+    : (node ? node.querySelector('[data-alias-remove]') : null);
+  var item = node ? node.closest('li') : null;
+  if (item) item.classList.remove('removed');
+  if (!chip) return;
+  chip.classList.remove('removed');
+  chip.removeAttribute('data-alias-removed');
+  chip.setAttribute('aria-label', 'Remove alias ' + (chip.getAttribute('data-alias') || ''));
+}
+function markAliasRemoved(chip) {
+  var item = chip.closest('li');
+  if (item) item.classList.add('removed');
+  chip.classList.add('removed');
+  chip.setAttribute('data-alias-removed', '1');
+  chip.setAttribute('aria-label', 'Restore alias ' + (chip.getAttribute('data-alias') || ''));
 }
 function addAliasChip(list, raw, status, removable) {
   var alias = String(raw || '').trim();
@@ -36,9 +59,17 @@ function addAliasChip(list, raw, status, removable) {
     return false;
   }
   var exists = false;
+  var restored = false;
   list.querySelectorAll('[data-alias]').forEach(function (node) {
-    if (aliasKey(node.getAttribute('data-alias')) === aliasKey(alias)) exists = true;
+    if (aliasKey(node.getAttribute('data-alias')) !== aliasKey(alias)) return;
+    if (aliasChipRemoved(node) || aliasChipRemoved(node.closest('li'))) {
+      restoreAliasChip(node);
+      restored = true;
+      return;
+    }
+    exists = true;
   });
+  if (restored) return true;
   if (exists) return false;
   var item = document.createElement('li');
   if (removable === false) {
@@ -105,6 +136,16 @@ function collectChipAliases(root) {
   var values = [];
   if (!root) return values;
   root.querySelectorAll('[data-alias]').forEach(function (node) {
+    if (aliasChipRemoved(node) || aliasChipRemoved(node.closest('li'))) return;
+    var alias = node.getAttribute('data-alias') || '';
+    if (alias) values.push(alias);
+  });
+  return values;
+}
+function collectRemovedAliases(root) {
+  var values = [];
+  if (!root) return values;
+  root.querySelectorAll('[data-alias-removed]').forEach(function (node) {
     var alias = node.getAttribute('data-alias') || '';
     if (alias) values.push(alias);
   });
@@ -172,7 +213,7 @@ function entityRow(entity, locked, series) {
     : '<td>' + aliasEditorHtml() + '</td>';
   var acts = locked
     ? '<td class="acts"><div class="acts-row">' + historyBtn + '</div></td>'
-    : '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" data-save="1" disabled>Save</button><button type="button" class="danger" data-delete="1">Delete</button></span></div></td>';
+    : '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" data-save="1" disabled>Save</button><button type="button" data-discard="1" disabled>Discard</button><button type="button" class="danger" data-delete="1">Delete</button></span></div></td>';
   wrap.innerHTML =
     nameCell +
     seriesCell +
@@ -241,6 +282,7 @@ window.krtaDraftEditor = function () {
   var pollTimer = null;
   var historyTarget = null;
   var descriptionBusy = false;
+  var saveAllBusy = false;
   if (typeof state.description !== 'string') state.description = '';
   function findEntity(type, key) {
     var list = type === 'series' ? state.series : state.characters;
@@ -259,7 +301,9 @@ window.krtaDraftEditor = function () {
     var pendingValue = pending ? pending.value : '';
     var name = nameInput ? nameInput.value : entity.name;
     var seriesLabel = seriesInput ? seriesInput.value : '';
-    var dirty = name.trim() !== entity.name
+    var pendingDelete = row.classList.contains('removed');
+    var dirty = pendingDelete
+      || name.trim() !== entity.name
       || (entity.type === 'character' && seriesLabel.trim() !== seriesDisplay(entity.seriesKey, state.series))
       || pendingValue.trim() !== ''
       || !aliasesEqual(aliases, entity.aliases);
@@ -270,13 +314,73 @@ window.krtaDraftEditor = function () {
       name: name,
       seriesLabel: seriesLabel,
       aliases: aliases,
-      pending: pendingValue
+      removed: collectRemovedAliases(row),
+      pending: pendingValue,
+      pendingDelete: pendingDelete
     };
   }
+  function setPending(el, on) {
+    if (!el) return;
+    if (on) el.classList.add('pending');
+    else el.classList.remove('pending');
+  }
+  function aliasCell(row) {
+    var box = row.querySelector('.aliases');
+    return box ? box.closest('td') : null;
+  }
   function syncSaveButton(row) {
+    var entity = findEntity(row.dataset.type, row.dataset.key);
+    var nameInput = row.querySelector('[data-field="name"]');
+    var seriesInput = row.querySelector('[data-field="seriesKey"]');
+    var pending = row.querySelector('[data-alias-input]');
+    var aliases = collectChipAliases(row);
+    var nameDirty = !!(entity && nameInput && nameInput.value.trim() !== entity.name);
+    var seriesDirty = !!(entity && entity.type === 'character' && seriesInput
+      && seriesInput.value.trim() !== seriesDisplay(entity.seriesKey, state.series));
+    var aliasDirty = !!(entity && ((pending && pending.value.trim() !== '')
+      || !aliasesEqual(aliases, entity.aliases)));
+    var pendingDelete = row.classList.contains('removed');
+    var dirty = !!(pendingDelete || nameDirty || seriesDirty || aliasDirty);
+    var deleteBtn = row.querySelector('[data-delete]');
+    if (deleteBtn) deleteBtn.textContent = pendingDelete ? 'Restore' : 'Delete';
     var button = row.querySelector('[data-save]');
-    if (!button) return;
-    button.disabled = !captureEdit(row);
+    if (button) {
+      button.disabled = !dirty;
+      setPending(button, dirty);
+    }
+    var discard = row.querySelector('[data-discard]');
+    if (discard) discard.disabled = !dirty;
+    setPending(row.querySelector('td.name'), nameDirty);
+    setPending(row.querySelector('td.series'), seriesDirty);
+    setPending(aliasCell(row), aliasDirty);
+    setPending(row.querySelector('td.acts'), dirty);
+    syncSaveAll();
+  }
+  function syncAddRow(row) {
+    if (!row) return;
+    var name = row.querySelector('#add-series-name, #add-character-name');
+    var series = row.querySelector('#add-character-series');
+    var pending = row.querySelector('[data-alias-input]');
+    var aliases = collectChipAliases(row);
+    var nameDirty = !!(name && name.value.trim());
+    var seriesDirty = !!(series && series.value.trim());
+    var aliasDirty = !!(pending && pending.value.trim()) || aliases.length > 0;
+    var dirty = nameDirty || seriesDirty || aliasDirty;
+    setPending(name ? name.closest('td') : null, nameDirty);
+    setPending(series ? series.closest('td') : null, seriesDirty);
+    setPending(aliasCell(row), aliasDirty);
+    setPending(row.querySelector('td.acts'), dirty);
+    var button = row.querySelector('#add-series, #add-character');
+    setPending(button, dirty);
+    var discard = row.querySelector('#discard-series, #discard-character');
+    if (discard) discard.disabled = !dirty;
+  }
+  function syncDescriptionPending() {
+    var field = document.getElementById('draft-description');
+    if (!field) return;
+    var next = field.value.replace(/^\s+|\s+$/g, '');
+    setPending(field, next !== state.description);
+    syncSaveAll();
   }
   function restoreEdit(edit) {
     var match = null;
@@ -302,8 +406,16 @@ window.krtaDraftEditor = function () {
       edit.aliases.forEach(function (alias) {
         addAliasChip(list, alias, null, !state.locked && !base[aliasKey(alias)]);
       });
+      (edit.removed || []).forEach(function (alias) {
+        if (!addAliasChip(list, alias, null, !state.locked && !base[aliasKey(alias)])) return;
+        list.querySelectorAll('[data-alias-remove]').forEach(function (chip) {
+          if (aliasKey(chip.getAttribute('data-alias')) === aliasKey(alias)) markAliasRemoved(chip);
+        });
+      });
     }
     if (pending) pending.value = edit.pending;
+    if (edit.pendingDelete) match.classList.add('removed');
+    else match.classList.remove('removed');
     syncSaveButton(match);
   }
   function historyEntries(type, key) {
@@ -456,6 +568,9 @@ window.krtaDraftEditor = function () {
       });
       if (!state.characters.length && state.locked) emptyState(characterList, 'characters', 5);
     }
+    if (addSeriesRow) syncAddRow(addSeriesRow);
+    if (addCharacterRow) syncAddRow(addCharacterRow);
+    syncSaveAll();
   }
   function replaceEntity(entity) {
     if (!entity) return;
@@ -471,7 +586,8 @@ window.krtaDraftEditor = function () {
       state.characters = state.characters.filter(function (item) { return item.key !== key; });
     }
   }
-  async function save(mutation) {
+  async function save(mutation, options) {
+    var silent = !!(options && options.silent);
     var result = await api('/api/v1/drafts/' + state.id + '/entities', {
       method: 'PATCH',
       body: JSON.stringify(mutation)
@@ -481,18 +597,149 @@ window.krtaDraftEditor = function () {
       if (result.body && result.body.code === 'ENTITY_GONE') {
         removeEntity(mutation.type, mutation.key);
       }
-      render();
-      showStatus(status, result.body && result.body.error ? result.body.error : 'The save did not apply.', true);
-      return;
+      if (!silent) {
+        render();
+        showStatus(status, result.body && result.body.error ? result.body.error : 'The save did not apply.', true);
+      }
+      return { ok: false, body: result.body };
     }
     if (!result.response.ok) {
-      showStatus(status, result.body && result.body.error ? result.body.error : 'The save did not apply.', true);
-      return;
+      if (!silent) {
+        showStatus(status, result.body && result.body.error ? result.body.error : 'The save did not apply.', true);
+      }
+      return { ok: false, body: result.body };
     }
     if (mutation.action === 'delete') removeEntity(mutation.type, mutation.key);
     else if (result.body && result.body.entity) replaceEntity(result.body.entity);
+    if (!silent) {
+      render();
+      showStatus(status, 'Saved.', false);
+    }
+    return { ok: true, body: result.body };
+  }
+  function dirtyRows() {
+    var rows = [];
+    document.querySelectorAll('tr.row').forEach(function (row) {
+      var edit = captureEdit(row);
+      if (!edit) return;
+      rows.push({
+        edit: edit,
+        revision: Number(row.dataset.revision)
+      });
+    });
+    return rows;
+  }
+  function descriptionDirty() {
+    var field = document.getElementById('draft-description');
+    if (!field) return false;
+    return field.value.replace(/^\s+|\s+$/g, '') !== state.description;
+  }
+  function addFormsDirty() {
+    var dirty = false;
+    document.querySelectorAll('tr.add-row').forEach(function (row) {
+      var name = row.querySelector('#add-series-name, #add-character-name');
+      var series = row.querySelector('#add-character-series');
+      var pending = row.querySelector('[data-alias-input]');
+      if (name && name.value.trim()) dirty = true;
+      if (series && series.value.trim()) dirty = true;
+      if (pending && pending.value.trim()) dirty = true;
+      if (collectChipAliases(row).length) dirty = true;
+    });
+    return dirty;
+  }
+  function syncSaveAll() {
+    var saveButton = document.getElementById('save-all');
+    var discardButton = document.getElementById('discard-all');
+    var rowDirty = dirtyRows().length > 0 || descriptionDirty();
+    var anyDirty = rowDirty || addFormsDirty();
+    if (saveButton) {
+      saveButton.disabled = !rowDirty || saveAllBusy;
+      setPending(saveButton, rowDirty && !saveAllBusy);
+    }
+    if (discardButton) discardButton.disabled = !anyDirty;
+  }
+  async function saveAll() {
+    if (saveAllBusy || state.locked) return;
+    saveAllBusy = true;
+    syncSaveAll();
+    if (descriptionDirty()) await commitDescription();
+    var pending = dirtyRows();
+    var failed = [];
+    var saved = 0;
+    for (var i = 0; i < pending.length; i++) {
+      var item = pending[i];
+      var result = await save(item.edit.pendingDelete ? {
+        type: item.edit.type,
+        action: 'delete',
+        key: item.edit.key,
+        expectedRevision: item.revision
+      } : {
+        type: item.edit.type,
+        action: 'update',
+        key: item.edit.key,
+        expectedRevision: item.revision,
+        name: item.edit.name,
+        seriesKey: item.edit.seriesLabel,
+        aliases: item.edit.aliases
+      }, { silent: true });
+      if (result.ok) saved += 1;
+      else failed.push(item.edit);
+    }
+    saveAllBusy = false;
     render();
-    showStatus(status, 'Saved.', false);
+    failed.forEach(restoreEdit);
+    if (failed.length) {
+      showStatus(status, failed.length === 1
+        ? 'One row could not be saved.'
+        : failed.length + ' rows could not be saved.', true);
+      syncSaveAll();
+      return;
+    }
+    if (saved) {
+      showStatus(status, saved === 1 ? 'Saved.' : 'Saved all changes.', false);
+    }
+    syncSaveAll();
+  }
+  function discardRow(row) {
+    var entity = findEntity(row.dataset.type, row.dataset.key);
+    if (!entity) return;
+    restoreEdit({
+      type: entity.type,
+      key: entity.key,
+      name: entity.name,
+      seriesLabel: seriesDisplay(entity.seriesKey, state.series),
+      aliases: entity.aliases.slice(),
+      removed: [],
+      pending: ''
+    });
+  }
+  function discardAddRow(row) {
+    if (!row) return;
+    var name = row.querySelector('#add-series-name, #add-character-name');
+    var series = row.querySelector('#add-character-series');
+    var pending = row.querySelector('[data-alias-input]');
+    var list = row.querySelector('[data-alias-list]');
+    if (name) name.value = '';
+    if (series) series.value = '';
+    if (pending) pending.value = '';
+    if (list) list.replaceChildren();
+    syncAddRow(row);
+  }
+  function discardDescription() {
+    var field = document.getElementById('draft-description');
+    if (!field) return;
+    field.value = state.description;
+    syncDescriptionPending();
+  }
+  function discardAll() {
+    if (state.locked) return;
+    document.querySelectorAll('tr.row').forEach(function (row) {
+      if (captureEdit(row)) discardRow(row);
+    });
+    document.querySelectorAll('tr.add-row').forEach(discardAddRow);
+    discardDescription();
+    syncSaveAll();
+    showStatus(status, 'Discarded unsaved changes.', false);
   }
   document.addEventListener('click', async function (event) {
     var target = event.target;
@@ -503,14 +750,41 @@ window.krtaDraftEditor = function () {
       if (box) lockPendingAlias(box, status);
       var aliasAddRow = target.closest('tr.row');
       if (aliasAddRow) syncSaveButton(aliasAddRow);
+      var aliasAddForm = target.closest('tr.add-row');
+      if (aliasAddForm) syncAddRow(aliasAddForm);
       return;
     }
     var aliasChip = target.closest('[data-alias-remove]');
     if (aliasChip) {
       var aliasItem = aliasChip.closest('li');
       var aliasRow = aliasChip.closest('tr.row');
-      if (aliasItem) aliasItem.remove();
+      var aliasForm = aliasChip.closest('tr.add-row');
+      var entity = aliasRow ? findEntity(aliasRow.dataset.type, aliasRow.dataset.key) : null;
+      var alias = aliasChip.getAttribute('data-alias') || '';
+      var saved = !!(entity && entity.aliases.some(function (value) {
+        return aliasKey(value) === aliasKey(alias);
+      }));
+      if (aliasChipRemoved(aliasChip)) {
+        restoreAliasChip(aliasChip);
+      } else if (saved) {
+        markAliasRemoved(aliasChip);
+      } else if (aliasItem) {
+        aliasItem.remove();
+      }
       if (aliasRow) syncSaveButton(aliasRow);
+      if (aliasForm) syncAddRow(aliasForm);
+      return;
+    }
+    if (target.id === 'save-all') {
+      await saveAll();
+      return;
+    }
+    if (target.id === 'discard-all') {
+      discardAll();
+      return;
+    }
+    if (target.id === 'discard-series' || target.id === 'discard-character') {
+      discardAddRow(target.closest('tr.add-row'));
       return;
     }
     if (target.id === 'lock-draft') {
@@ -539,8 +813,21 @@ window.krtaDraftEditor = function () {
       await openHistory(type, key, row);
       return;
     }
+    if (target.dataset.discard) {
+      discardRow(row);
+      return;
+    }
     if (target.dataset.save) {
       if (!captureEdit(row)) return;
+      if (row.classList.contains('removed')) {
+        await save({
+          type: type,
+          action: 'delete',
+          key: key,
+          expectedRevision: revision
+        });
+        return;
+      }
       var name = row.querySelector('[data-field="name"]');
       var seriesKey = row.querySelector('[data-field="seriesKey"]');
       await save({
@@ -555,8 +842,9 @@ window.krtaDraftEditor = function () {
       return;
     }
     if (target.dataset.delete) {
-      if (!window.confirm('Delete this ' + type + '?')) return;
-      await save({ type: type, action: 'delete', key: key, expectedRevision: revision });
+      if (row.classList.contains('removed')) row.classList.remove('removed');
+      else row.classList.add('removed');
+      syncSaveButton(row);
     }
   });
   document.addEventListener('keydown', function (event) {
@@ -568,12 +856,20 @@ window.krtaDraftEditor = function () {
     if (box) lockPendingAlias(box, status);
     var aliasRow = target.closest('tr.row');
     if (aliasRow) syncSaveButton(aliasRow);
+    var aliasForm = target.closest('tr.add-row');
+    if (aliasForm) syncAddRow(aliasForm);
   });
   document.addEventListener('input', function (event) {
     var field = event.target;
     if (!(field instanceof HTMLElement)) return;
+    if (field.id === 'draft-description') {
+      syncDescriptionPending();
+      return;
+    }
     var fieldRow = field.closest('tr.row');
     if (fieldRow) syncSaveButton(fieldRow);
+    var addRow = field.closest('tr.add-row');
+    if (addRow) syncAddRow(addRow);
   });
   var addSeries = document.getElementById('add-series');
   if (addSeries) {
@@ -620,6 +916,7 @@ window.krtaDraftEditor = function () {
     var next = field.value.replace(/^\s+|\s+$/g, '');
     if (next === state.description) {
       field.value = next;
+      syncDescriptionPending();
       return;
     }
     descriptionBusy = true;
@@ -634,6 +931,7 @@ window.krtaDraftEditor = function () {
     }
     state.description = result.body && typeof result.body.description === 'string' ? result.body.description : next;
     field.value = state.description;
+    syncDescriptionPending();
   }
   async function poll() {
     if (document.hidden || polling) return;

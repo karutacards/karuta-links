@@ -21,6 +21,33 @@ describe('draft audit sentences', () => {
   it('names add, rename, alias and delete actions', () => {
     expect(draftAuditSentence(row({ action: 'add' }))).toBe('@craig added series New Series.')
     expect(draftAuditSentence(row({
+      action: 'import'
+    }))).toBe('@craig imported series New Series.')
+    expect(draftAuditSentence(row({
+      entityType: 'character',
+      entityKey: 'hana-kurusu',
+      action: 'import',
+      afterJson: JSON.stringify({
+        type: 'character',
+        key: 'hana-kurusu',
+        name: 'Hana Kurusu',
+        seriesKey: 'jujutsu-kaisen',
+        aliases: ['Hana', 'Sweetie']
+      })
+    }))).toBe('@craig imported character Hana Kurusu with aliases: Hana, Sweetie.')
+    expect(draftAuditSentence(row({
+      entityType: 'character',
+      entityKey: 'hana-kurusu',
+      action: 'import',
+      afterJson: JSON.stringify({
+        type: 'character',
+        key: 'hana-kurusu',
+        name: 'Hana Kurusu',
+        seriesKey: 'jujutsu-kaisen',
+        aliases: ['Hana']
+      })
+    }))).toBe('@craig imported character Hana Kurusu with alias: Hana.')
+    expect(draftAuditSentence(row({
       entityType: 'character',
       entityKey: 'neji-hyuuga',
       action: 'update',
@@ -38,7 +65,27 @@ describe('draft audit sentences', () => {
         seriesKey: 'naruto',
         aliases: []
       })
-    }))).toBe('@craig renamed Neji Hyuuga to Neji.')
+    }))).toBe('@craig renamed character Neji Hyuuga to character Neji.')
+    expect(draftAuditSentence(row({
+      entityType: 'character',
+      entityKey: 'hana-kurusu',
+      action: 'update',
+      beforeJson: JSON.stringify({
+        type: 'character',
+        key: 'hana-kurusu',
+        name: 'Hana Kurusu',
+        seriesKey: 'naruto',
+        aliases: []
+      }),
+      afterJson: JSON.stringify({
+        type: 'character',
+        key: 'hana-kurusu',
+        name: 'Hana Kurusu',
+        seriesKey: 'jujutsu-kaisen',
+        seriesName: 'Jujutsu Kaisen',
+        aliases: []
+      })
+    }))).toBe('@craig moved character Hana Kurusu to series Jujutsu Kaisen.')
     expect(draftAuditSentence(row({
       entityType: 'character',
       entityKey: 'neji-hyuuga',

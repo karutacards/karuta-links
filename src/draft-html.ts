@@ -243,8 +243,28 @@ function layout(title: string, body: string, script = ''): string {
       letter-spacing: 0.03em;
     }
     tbody tr:hover td { background: #181c26; }
+    tr.row.removed td:not(.acts) { opacity: 0.4; }
     .add-row td { background: #0d0f14; }
     .add-row:hover td { background: #121722; }
+    td.pending,
+    .add-row td.pending,
+    tbody tr:hover td.pending,
+    .add-row:hover td.pending {
+      background: rgba(232, 194, 122, 0.18);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    td.pending input {
+      border-color: var(--accent);
+    }
+    .draft-note.pending {
+      border-color: var(--accent);
+      background: rgba(232, 194, 122, 0.12);
+    }
+    button.pending:not(:disabled) {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #12141a;
+    }
     .add-row input {
       background: #2a3344;
       border-color: #5a6578;
@@ -325,6 +345,20 @@ function layout(title: string, body: string, script = ''): string {
     .alias-chip:hover, .alias-chip:hover .alias-x {
       border-color: var(--danger);
       color: var(--danger);
+    }
+    .alias-chip.removed,
+    .alias-chip.removed:hover,
+    li.removed .alias-chip,
+    li.removed .alias-chip:hover {
+      opacity: 0.4;
+      border-color: var(--line);
+      color: var(--ink);
+    }
+    .alias-chip.removed .alias-x,
+    .alias-chip.removed:hover .alias-x,
+    li.removed .alias-chip .alias-x,
+    li.removed .alias-chip:hover .alias-x {
+      color: var(--muted);
     }
     li.alias-chip { cursor: default; }
     .aliases input { width: 100%; flex: none; }
@@ -473,7 +507,7 @@ export function renderDraftEditor(
          <td><input id="add-series-name" aria-label="Name" autocomplete="off"></td>
          <td>${aliasCell('add-series-aliases')}</td>
          <td></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-series">Add series</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-series">Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
        </tr>`
   const addCharacter = locked
     ? ''
@@ -482,7 +516,7 @@ export function renderDraftEditor(
          <td><input id="add-character-series" aria-label="Series" autocomplete="off"></td>
          <td>${aliasCell('add-character-aliases')}</td>
          <td></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-character">Add character</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-character">Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
        </tr>`
   return layout(
     `Draft ${draft.id}`,
@@ -493,6 +527,8 @@ export function renderDraftEditor(
        </div>
        <div class="top-tools">
          <div id="draft-presence" class="presence" aria-label="Editors on this draft"></div>
+         ${!locked ? '<button type="button" id="save-all" disabled>Save all</button>' : ''}
+         ${!locked ? '<button type="button" id="discard-all" disabled>Discard all</button>' : ''}
          ${options.canLock && !locked ? '<button type="button" id="lock-draft" class="primary">Lock draft</button>' : ''}
          ${options.canLock && locked ? `<a class="file" id="export-draft" href="/api/v1/drafts/${draft.id}/export.txt">Download</a>` : ''}
          ${options.canLock && locked ? '<button type="button" id="unlock-draft">Unlock draft</button>' : ''}

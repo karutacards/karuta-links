@@ -4,6 +4,12 @@ type AuditPayload = {
   name: string
   aliases: string[]
   seriesKey: string
+  seriesName: string
+}
+
+export type DraftAuditSeriesRef = {
+  key: string
+  name: string
 }
 
 export function actorName(username: string): string {
@@ -36,7 +42,8 @@ function parsePayload(raw: string | null): AuditPayload | null {
     return {
       name: typeof record.name === 'string' ? record.name : '',
       aliases,
-      seriesKey: typeof record.seriesKey === 'string' ? record.seriesKey : ''
+      seriesKey: typeof record.seriesKey === 'string' ? record.seriesKey : '',
+      seriesName: typeof record.seriesName === 'string' ? record.seriesName : ''
     }
   } catch {
     return null
@@ -79,6 +86,13 @@ function nameList(names: string[]): DraftAuditSpan[] {
   })
 }
 
+function commaList(names: string[]): DraftAuditSpan[] {
+  return names.flatMap((name, index) => {
+    if (index === 0) return [entity(name)]
+    return [text(', '), entity(name)]
+  })
+}
+
 function aliasUpdateSpans(
   before: string[],
   after: string[],
@@ -103,6 +117,18 @@ function entityName(entry: DraftAuditRow, payload: AuditPayload | null): string 
   return payload?.name.trim() || entry.entityKey
 }
 
+function seriesLabel(
+  payload: AuditPayload | null,
+  series: readonly DraftAuditSeriesRef[]
+): string {
+  const named = payload?.seriesName.trim()
+  if (named) return named
+  const key = payload?.seriesKey.trim() || ''
+  if (!key) return 'a new series'
+  const match = series.find((item) => item.key === key)
+  return match?.name.trim() || key
+}
+
 function text(value: string): DraftAuditSpan {
   return { text: value }
 }
@@ -111,7 +137,10 @@ function entity(value: string): DraftAuditSpan {
   return { text: value, entity: true }
 }
 
-export function draftAuditSpans(entry: DraftAuditRow): DraftAuditSpan[] {
+export function draftAuditSpans(
+  entry: DraftAuditRow,
+  series: readonly DraftAuditSeriesRef[] = []
+): DraftAuditSpan[] {
   if (entry.action === 'lock') {
     return [text(' locked this draft.')]
   }
@@ -128,6 +157,19 @@ export function draftAuditSpans(entry: DraftAuditRow): DraftAuditSpan[] {
   const before = parsePayload(entry.beforeJson)
   const after = parsePayload(entry.afterJson)
   const type = entry.entityType
+  if (entry.action === 'import') {
+    const name = entityName(entry, after)
+    const aliases = uniqueAliases(after?.aliases ?? [])
+    const spans: DraftAuditSpan[] = [text(` imported ${type} `), entity(name)]
+    if (aliases.length) {
+      spans.push(
+        text(aliases.length === 1 ? ' with alias: ' : ' with aliases: '),
+        ...commaList(aliases)
+      )
+    }
+    spans.push(text('.'))
+    return spans
+  }
   if (entry.action === 'add') {
     return [text(` added ${type} `), entity(entityName(entry, after)), text('.')]
   }
@@ -138,22 +180,36 @@ export function draftAuditSpans(entry: DraftAuditRow): DraftAuditSpan[] {
     const beforeName = entityName(entry, before)
     const afterName = entityName(entry, after)
     if (before && after && beforeName !== afterName) {
-      return [text(' renamed '), entity(beforeName), text(' to '), entity(afterName), text('.')]
+      return [
+        text(` renamed ${type} `),
+        entity(beforeName),
+        text(` to ${type} `),
+        entity(afterName),
+        text('.')
+      ]
     }
     if (before && after && aliasKeys(before.aliases) !== aliasKeys(after.aliases)) {
       return aliasUpdateSpans(before.aliases, after.aliases, type, afterName)
         ?? [text(` updated ${type} `), entity(afterName), text('.')]
     }
     if (before && after && before.seriesKey !== after.seriesKey) {
-      const destination = after.seriesKey.trim() || 'a new series'
-      return [text(' moved '), entity(afterName), text(' to '), entity(destination), text('.')]
+      return [
+        text(` moved ${type} `),
+        entity(afterName),
+        text(' to series '),
+        entity(seriesLabel(after, series)),
+        text('.')
+      ]
     }
     return [text(` updated ${type} `), entity(afterName), text('.')]
   }
   return [text(` changed ${type} `), entity(entityName(entry, after ?? before)), text('.')]
 }
 
-export function draftAuditSentence(entry: DraftAuditRow): string {
-  const body = draftAuditSpans(entry).map((span) => span.text).join('')
+export function draftAuditSentence(
+  entry: DraftAuditRow,
+  series: readonly DraftAuditSeriesRef[] = []
+): string {
+  const body = draftAuditSpans(entry, series).map((span) => span.text).join('')
   return `@${actorName(entry.username)}${body}`
 }

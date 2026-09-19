@@ -86,7 +86,14 @@ function rowToEntity(row: EntityRow): DraftEntity {
     : { type: 'series', ...shared }
 }
 
-function entityPayload(entity: DraftEntity): string {
+function seriesNameMap(series: readonly { key: string; name: string }[]): Map<string, string> {
+  return new Map(series.map((item) => [item.key, item.name]))
+}
+
+function entityPayload(
+  entity: DraftEntity,
+  series: readonly { key: string; name: string }[] = []
+): string {
   if (entity.type === 'series') {
     return JSON.stringify({
       type: entity.type,
@@ -95,11 +102,13 @@ function entityPayload(entity: DraftEntity): string {
       aliases: entity.aliases
     })
   }
+  const names = seriesNameMap(series)
   return JSON.stringify({
     type: entity.type,
     key: entity.key,
     name: entity.name,
     seriesKey: entity.seriesKey,
+    seriesName: names.get(entity.seriesKey) ?? '',
     aliases: entity.aliases
   })
 }
@@ -150,13 +159,16 @@ function toAuditRow(row: AuditDbRow): DraftAuditRow {
   }
 }
 
-function toAuditEvent(row: AuditDbRow): DraftAuditEvent {
+function toAuditEvent(
+  row: AuditDbRow,
+  series: readonly { key: string; name: string }[] = []
+): DraftAuditEvent {
   const entry = toAuditRow(row)
   return {
     ...entry,
-    summary: draftAuditSentence(entry),
+    summary: draftAuditSentence(entry, series),
     actor: actorName(entry.username),
-    spans: draftAuditSpans(entry)
+    spans: draftAuditSpans(entry, series)
   }
 }
 
@@ -209,8 +221,8 @@ export async function createDraft(
         `INSERT INTO draft_audit
          (draft_id, entity_type, entity_key, action, before_json, after_json,
           discord_id, username, created_at)
-         VALUES (?, 'series', ?, 'add', NULL, ?, ?, ?, ?)`
-      ).bind(id, entity.key, entityPayload(entity), editorId, editorName, now)
+         VALUES (?, 'series', ?, 'import', NULL, ?, ?, ?, ?)`
+      ).bind(id, entity.key, entityPayload(entity, parsed.series), editorId, editorName, now)
     )
   }
   for (const character of parsed.characters) {
@@ -249,8 +261,8 @@ export async function createDraft(
         `INSERT INTO draft_audit
          (draft_id, entity_type, entity_key, action, before_json, after_json,
           discord_id, username, created_at)
-         VALUES (?, 'character', ?, 'add', NULL, ?, ?, ?, ?)`
-      ).bind(id, entity.key, entityPayload(entity), editorId, editorName, now)
+         VALUES (?, 'character', ?, 'import', NULL, ?, ?, ?, ?)`
+      ).bind(id, entity.key, entityPayload(entity, parsed.series), editorId, editorName, now)
     )
   }
   await db.batch(statements)
@@ -314,7 +326,8 @@ export async function listEntityAudit(
 export async function listDraftEvents(
   db: D1Database,
   draftId: number,
-  after: number
+  after: number,
+  series: readonly { key: string; name: string }[] = []
 ): Promise<DraftAuditEvent[]> {
   const cursor = Number.isSafeInteger(after) && after > 0 ? after : 0
   const result = await db.prepare(
@@ -324,7 +337,7 @@ export async function listDraftEvents(
      WHERE draft_id = ? AND id > ?
      ORDER BY id ASC`
   ).bind(draftId, cursor).all<AuditDbRow>()
-  return (result.results ?? []).map(toAuditEvent)
+  return (result.results ?? []).map((row) => toAuditEvent(row, series))
 }
 
 export async function touchDraftPresence(
@@ -370,7 +383,7 @@ export async function pollDraftEvents(
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
-  const events = await listDraftEvents(db, draftId, after)
+  const events = await listDraftEvents(db, draftId, after, draft.series)
   const presence = await touchDraftPresence(db, draftId, editorId, editorName, now)
   const lastId = events.at(-1)?.id
   return {
@@ -494,8 +507,8 @@ export async function mutateDraftEntity(
       mutation.type,
       result.entity?.key ?? current?.key ?? key,
       result.action,
-      result.before ? entityPayload(result.before) : null,
-      result.after ? entityPayload(result.after) : null,
+      result.before ? entityPayload(result.before, draftSeries) : null,
+      result.after ? entityPayload(result.after, draftSeries) : null,
       editorId,
       editorName,
       now
