@@ -185,14 +185,25 @@ function entityRow(entity, locked, series) {
     if (seriesCellEl) seriesCellEl.textContent = seriesDisplay(entity.seriesKey, series);
   }
   fillLastEdited(wrap, entity.lastEditorName);
+  var live = entity.importAction === 'update';
   var nameInput = wrap.querySelector('[data-field="name"]');
-  if (nameInput) nameInput.value = entity.name;
+  if (nameInput) {
+    nameInput.value = entity.name;
+    if (live) nameInput.disabled = true;
+  }
   var seriesInput = wrap.querySelector('[data-field="seriesKey"]');
-  if (seriesInput) seriesInput.value = seriesDisplay(entity.seriesKey, series);
+  if (seriesInput) {
+    seriesInput.value = seriesDisplay(entity.seriesKey, series);
+    if (live) seriesInput.disabled = true;
+  }
   var aliasList = wrap.querySelector('[data-alias-list]');
   if (aliasList) {
+    var base = {};
+    (entity.baseAliases || []).forEach(function (alias) {
+      base[aliasKey(alias)] = true;
+    });
     entity.aliases.forEach(function (alias) {
-      addAliasChip(aliasList, alias, null, !locked);
+      addAliasChip(aliasList, alias, null, !locked && !base[aliasKey(alias)]);
     });
   }
   return wrap;
@@ -278,9 +289,16 @@ window.krtaDraftEditor = function () {
     if (nameInput) nameInput.value = edit.name;
     if (seriesInput) seriesInput.value = edit.seriesLabel;
     if (list) {
+      var entity = findEntity(edit.type, edit.key);
+      var base = {};
+      if (entity && entity.baseAliases) {
+        entity.baseAliases.forEach(function (alias) {
+          base[aliasKey(alias)] = true;
+        });
+      }
       list.replaceChildren();
       edit.aliases.forEach(function (alias) {
-        addAliasChip(list, alias, null, !state.locked);
+        addAliasChip(list, alias, null, !state.locked && !base[aliasKey(alias)]);
       });
     }
     if (pending) pending.value = edit.pending;

@@ -32,6 +32,8 @@ type EntityRow = {
   name: string
   series_key: string | null
   aliases: string
+  import_action: string | null
+  base_aliases: string | null
   revision: number
   last_editor_id: string | null
   last_editor_name: string | null
@@ -69,6 +71,8 @@ function rowToEntity(row: EntityRow): DraftEntity {
     key: row.entity_key,
     name: row.name,
     aliases,
+    importAction: row.import_action === 'update' ? 'update' as const : 'add' as const,
+    baseAliases: parseAliases(row.base_aliases ?? '[]'),
     revision: row.revision,
     lastEditorId: row.last_editor_id,
     lastEditorName: row.last_editor_name
@@ -110,8 +114,8 @@ async function getEntityRow(
   key: string
 ): Promise<EntityRow | null> {
   return db.prepare(
-    `SELECT entity_type, entity_key, name, series_key, aliases, revision,
-            last_editor_id, last_editor_name
+    `SELECT entity_type, entity_key, name, series_key, aliases, import_action,
+            base_aliases, revision, last_editor_id, last_editor_name
      FROM draft_entities
      WHERE draft_id = ? AND entity_type = ? AND entity_key = ?`
   ).bind(draftId, type, key).first<EntityRow>()
@@ -163,11 +167,15 @@ export async function createDraft(
     ).bind(id, now, now)
   ]
   for (const series of parsed.series) {
+    const importAction = series.action ?? 'add'
+    const aliases = series.aliases ?? []
     const entity: DraftSeries = {
       type: 'series',
       key: series.key,
       name: series.name,
-      aliases: series.aliases ?? [],
+      aliases,
+      importAction,
+      baseAliases: importAction === 'update' ? aliases : [],
       revision: 1,
       lastEditorId: editorId,
       lastEditorName: editorName
@@ -175,10 +183,19 @@ export async function createDraft(
     statements.push(
       db.prepare(
         `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, revision,
-          last_editor_id, last_editor_name)
-         VALUES (?, 'series', ?, ?, NULL, ?, 1, ?, ?)`
-      ).bind(id, entity.key, entity.name, JSON.stringify(entity.aliases), editorId, editorName),
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         VALUES (?, 'series', ?, ?, NULL, ?, ?, ?, 1, ?, ?)`
+      ).bind(
+        id,
+        entity.key,
+        entity.name,
+        JSON.stringify(entity.aliases),
+        entity.importAction,
+        JSON.stringify(entity.baseAliases),
+        editorId,
+        editorName
+      ),
       db.prepare(
         `INSERT INTO draft_audit
          (draft_id, entity_type, entity_key, action, before_json, after_json,
@@ -188,12 +205,16 @@ export async function createDraft(
     )
   }
   for (const character of parsed.characters) {
+    const importAction = character.action ?? 'add'
+    const aliases = character.aliases ?? []
     const entity: DraftCharacter = {
       type: 'character',
       key: character.key,
       name: character.name,
       seriesKey: character.seriesKey,
-      aliases: character.aliases ?? [],
+      aliases,
+      importAction,
+      baseAliases: importAction === 'update' ? aliases : [],
       revision: 1,
       lastEditorId: editorId,
       lastEditorName: editorName
@@ -201,15 +222,17 @@ export async function createDraft(
     statements.push(
       db.prepare(
         `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, revision,
-          last_editor_id, last_editor_name)
-         VALUES (?, 'character', ?, ?, ?, ?, 1, ?, ?)`
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         VALUES (?, 'character', ?, ?, ?, ?, ?, ?, 1, ?, ?)`
       ).bind(
         id,
         entity.key,
         entity.name,
         entity.seriesKey,
         JSON.stringify(entity.aliases),
+        entity.importAction,
+        JSON.stringify(entity.baseAliases),
         editorId,
         editorName
       ),
@@ -235,8 +258,8 @@ export async function getDraft(db: D1Database, id: number): Promise<DraftRecord 
     return null
   }
   const result = await db.prepare(
-    `SELECT entity_type, entity_key, name, series_key, aliases, revision,
-            last_editor_id, last_editor_name
+    `SELECT entity_type, entity_key, name, series_key, aliases, import_action,
+            base_aliases, revision, last_editor_id, last_editor_name
      FROM draft_entities
      WHERE draft_id = ?
      ORDER BY entity_type, name COLLATE NOCASE, entity_key`
@@ -411,9 +434,9 @@ export async function mutateDraftEntity(
     statements.push(
       db.prepare(
         `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, revision,
-          last_editor_id, last_editor_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         draftId,
         result.entity.type,
@@ -421,6 +444,8 @@ export async function mutateDraftEntity(
         result.entity.name,
         result.entity.type === 'character' ? result.entity.seriesKey : null,
         JSON.stringify(result.entity.aliases),
+        result.entity.importAction,
+        JSON.stringify(result.entity.baseAliases),
         result.entity.revision,
         editorId,
         editorName

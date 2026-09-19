@@ -12,7 +12,7 @@ export function draftToCsv(draft: DraftRecord): string {
   for (const series of draft.series) {
     lines.push([
       csvField('series'),
-      csvField('add'),
+      csvField(series.importAction),
       csvField(series.name),
       csvField(series.key),
       csvField(series.aliases.join('|'))
@@ -21,7 +21,7 @@ export function draftToCsv(draft: DraftRecord): string {
   for (const character of draft.characters) {
     lines.push([
       csvField('character'),
-      csvField('add'),
+      csvField(character.importAction),
       csvField(character.name),
       csvField(character.seriesKey),
       csvField(character.aliases.join('|'))

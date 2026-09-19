@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { applyDraftMutation } from './draft-mutation'
 import { DraftError, type DraftSeries } from './draft-types'
 
-const series = (revision: number): DraftSeries => ({
+const series = (revision: number, extra: Partial<DraftSeries> = {}): DraftSeries => ({
   type: 'series',
   key: 'new-series',
   name: 'New Series',
   aliases: ['Alt'],
+  importAction: 'add',
+  baseAliases: [],
   revision,
   lastEditorId: '1',
-  lastEditorName: 'first'
+  lastEditorName: 'first',
+  ...extra
 })
 
 describe('draft mutation', () => {
@@ -25,6 +28,7 @@ describe('draft mutation', () => {
       type: 'series',
       key: 'new-series',
       revision: 1,
+      importAction: 'add',
       lastEditorName: 'second'
     })
   })
@@ -137,6 +141,79 @@ describe('draft mutation', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(DraftError)
       expect(error).toMatchObject({ code: 'ENTITY_GONE', status: 409, entity: null })
+    }
+  })
+
+  it('rejects a rename on a live imported row', () => {
+    try {
+      applyDraftMutation(
+        series(3, { importAction: 'update', baseAliases: ['Alt'] }),
+        {
+          type: 'series',
+          action: 'update',
+          key: 'new-series',
+          expectedRevision: 3,
+          name: 'Renamed'
+        },
+        new Set(['new-series']),
+        '2',
+        'second'
+      )
+      throw new Error('expected live rename')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'This live row cannot be renamed.'
+      })
+    }
+  })
+
+  it('adds an alias on a live imported row', () => {
+    const result = applyDraftMutation(
+      series(3, { importAction: 'update', baseAliases: ['Alt'] }),
+      {
+        type: 'series',
+        action: 'update',
+        key: 'new-series',
+        expectedRevision: 3,
+        name: 'New Series',
+        aliases: ['Alt', 'Extra']
+      },
+      new Set(['new-series']),
+      '2',
+      'second'
+    )
+    expect(result.entity).toMatchObject({
+      aliases: ['Alt', 'Extra'],
+      importAction: 'update',
+      baseAliases: ['Alt']
+    })
+  })
+
+  it('rejects removing an imported alias', () => {
+    try {
+      applyDraftMutation(
+        series(3, { importAction: 'update', baseAliases: ['Alt'] }),
+        {
+          type: 'series',
+          action: 'update',
+          key: 'new-series',
+          expectedRevision: 3,
+          name: 'New Series',
+          aliases: []
+        },
+        new Set(['new-series']),
+        '2',
+        'second'
+      )
+      throw new Error('expected imported alias')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'Imported aliases cannot be removed.'
+      })
     }
   })
 })

@@ -15,6 +15,8 @@ describe('draft CSV', () => {
         key: 'new-series',
         name: 'New Series',
         aliases: ['Alt', 'Other'],
+        importAction: 'add',
+        baseAliases: [],
         revision: 1,
         lastEditorId: '1',
         lastEditorName: 'craig'
@@ -25,6 +27,8 @@ describe('draft CSV', () => {
         name: 'Hero',
         seriesKey: 'new-series',
         aliases: ['Champ'],
+        importAction: 'add',
+        baseAliases: [],
         revision: 1,
         lastEditorId: '1',
         lastEditorName: 'craig'
@@ -38,5 +42,28 @@ describe('draft CSV', () => {
         ''
       ].join('\n')
     )
+  })
+
+  it('exports imported live rows as update', () => {
+    const draft: DraftRecord = {
+      id: 4,
+      createdAt: 1,
+      updatedAt: 2,
+      lockedAt: 3,
+      lockedBy: '1',
+      series: [{
+        type: 'series',
+        key: 'naruto',
+        name: 'Naruto',
+        aliases: ['Ninja', 'Draft Alias'],
+        importAction: 'update',
+        baseAliases: ['Ninja'],
+        revision: 2,
+        lastEditorId: '1',
+        lastEditorName: 'craig'
+      }],
+      characters: []
+    }
+    expect(draftToCsv(draft)).toContain('series,update,Naruto,naruto,Ninja|Draft Alias')
   })
 })

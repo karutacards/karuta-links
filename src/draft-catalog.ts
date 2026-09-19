@@ -1,4 +1,10 @@
-import { DraftError, type DraftCatalogInput, type DraftCharacterInput, type DraftSeriesInput } from './draft-types'
+import {
+  DraftError,
+  type DraftCatalogInput,
+  type DraftCharacterInput,
+  type DraftImportAction,
+  type DraftSeriesInput
+} from './draft-types'
 
 const MAX_NAME = 200
 const MAX_ALIAS = 200
@@ -114,6 +120,16 @@ function cleanName(raw: unknown): string {
   return name
 }
 
+function cleanAction(raw: unknown): DraftImportAction {
+  if (raw === undefined || raw === null || raw === '') {
+    return 'add'
+  }
+  if (raw === 'add' || raw === 'update') {
+    return raw
+  }
+  throw new DraftError('INVALID_INPUT', 'Action must be add or update.', 400)
+}
+
 function cleanKey(raw: unknown, name: string, used: Set<string>): string {
   if (raw === undefined || raw === null || raw === '') {
     return uniqueDraftKey(name, used)
@@ -160,7 +176,8 @@ export function parseDraftCatalog(raw: unknown): {
     series.push({
       key,
       name,
-      aliases: cleanAliases(item.aliases)
+      aliases: cleanAliases(item.aliases),
+      action: cleanAction(item.action)
     })
   }
 
@@ -181,7 +198,8 @@ export function parseDraftCatalog(raw: unknown): {
       key,
       name,
       seriesKey,
-      aliases: cleanAliases(item.aliases)
+      aliases: cleanAliases(item.aliases),
+      action: cleanAction(item.action)
     })
   }
 

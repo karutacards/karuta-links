@@ -13,12 +13,13 @@ describe('draft catalog', () => {
       series: [{ name: 'New Series', aliases: ['Alt', 'alt', ''] }],
       characters: [{ name: 'Hero', seriesKey: 'New Series', aliases: ['Champ'] }]
     })).toEqual({
-      series: [{ key: 'new-series', name: 'New Series', aliases: ['Alt'] }],
+      series: [{ key: 'new-series', name: 'New Series', aliases: ['Alt'], action: 'add' }],
       characters: [{
         key: 'hero',
         name: 'Hero',
         seriesKey: 'new-series',
-        aliases: ['Champ']
+        aliases: ['Champ'],
+        action: 'add'
       }]
     })
   })
@@ -39,6 +40,22 @@ describe('draft catalog', () => {
         { key: 'new-series-2', name: 'New Series!' }
       ],
       characters: [{ key: 'hero', seriesKey: 'new-series-2' }]
+    })
+  })
+
+  it('keeps an imported update action', () => {
+    expect(parseDraftCatalog({
+      series: [{ key: 'naruto', name: 'Naruto', aliases: ['Ninja'], action: 'update' }],
+      characters: [{
+        key: 'neji-hyuuga',
+        name: 'Neji Hyuuga',
+        seriesKey: 'naruto',
+        aliases: ['Neji'],
+        action: 'update'
+      }]
+    })).toMatchObject({
+      series: [{ key: 'naruto', action: 'update' }],
+      characters: [{ key: 'neji-hyuuga', action: 'update' }]
     })
   })
 

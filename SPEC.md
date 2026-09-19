@@ -131,7 +131,9 @@ Each series or character has a revision. A save sends the revision it started fr
 
 Open draft tabs poll `GET /api/v1/drafts/{id}/events?after={id}` every two seconds while visible. The response is not cached. New `draft_audit` rows append to a draft-wide Activity list and update other editors' tables. History is the same audit stream filtered to that series or character. Presence is a `draft_presence` heartbeat; rows older than 10 seconds drop off. A remote lock reloads the editor. Unsaved rows are not overwritten.
 
-The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/drafts/import` and `postMessage` from `https://karuta.gswaccess.com`. The import page POSTs `/api/v1/drafts` with the session cookie. It does not use `INGEST_TOKEN`.
+The KarutaImporter bookmarklet posts a text catalog by opening `https://krta.cc/drafts/import` and `postMessage` from `https://karuta.gswaccess.com`. Each entity may include `action` of `add` or `update`, classified against live Admin data at post time. The import page POSTs `/api/v1/drafts` with the session cookie. It does not use `INGEST_TOKEN`. krta.cc does not load the production corpus.
+
+An `update` row freezes the key, name and imported aliases. Collaborators may add aliases and may remove only aliases added after import. Rows created on krta.cc, and imported `add` rows, stay fully editable. Locked CSV export writes that stored `action`. A blank-draft create path is not implemented.
 
 Draft HTML is a standalone dark editor. It does not use dump page chrome, a home link or a footer. Series and characters are tables. The first row of each table adds an entity. Alias chips remove on click. Enter locks a new alias. Last edited is a column of Discord mentions. History opens a dialog that names the series or character, then that row's audit with timestamps and the same formatting as Activity. Presence chips sit in the header. Activity is a live rail of complete-sentence audit lines.
 
