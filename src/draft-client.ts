@@ -975,17 +975,96 @@ window.krtaDraftEditor = function () {
     });
     return { gone: gone, conflicted: conflicted };
   }
+  function catalogFocus() {
+    var el = document.activeElement;
+    if (!el || !el.closest || !el.closest('.catalog')) return null;
+    var start = typeof el.selectionStart === 'number' ? el.selectionStart : null;
+    var end = typeof el.selectionEnd === 'number' ? el.selectionEnd : null;
+    if (el.id) {
+      return { kind: 'id', id: el.id, start: start, end: end };
+    }
+    var row = el.closest('tr.row');
+    var rowType = row ? row.getAttribute('data-type') : '';
+    var rowId = row ? row.getAttribute('data-key') : '';
+    if (row && rowType && rowId) {
+      var field = el.getAttribute('data-field') || '';
+      if (el.hasAttribute('data-alias-input')) field = 'alias';
+      if (el.hasAttribute('data-save')) field = 'save';
+      if (el.hasAttribute('data-discard')) field = 'discard';
+      if (el.hasAttribute('data-delete')) field = 'delete';
+      if (el.hasAttribute('data-audit')) field = 'audit';
+      if (!field) return null;
+      return {
+        kind: 'row',
+        type: rowType,
+        id: rowId,
+        field: field,
+        start: start,
+        end: end
+      };
+    }
+    var add = el.closest('tr.add-row');
+    if (add && el.hasAttribute('data-alias-input')) {
+      return { kind: 'add-alias', addId: add.id, start: start, end: end };
+    }
+    return null;
+  }
+  function catalogField(row, field) {
+    if (field === 'alias') return row.querySelector('[data-alias-input]');
+    if (field === 'save') return row.querySelector('[data-save]');
+    if (field === 'discard') return row.querySelector('[data-discard]');
+    if (field === 'delete') return row.querySelector('[data-delete]');
+    if (field === 'audit') return row.querySelector('[data-audit]');
+    return row.querySelector('[data-field="' + field + '"]');
+  }
+  function restoreCatalogFocus(focus) {
+    if (!focus) return;
+    var el = null;
+    if (focus.kind === 'id') {
+      el = document.getElementById(focus.id);
+    } else if (focus.kind === 'add-alias') {
+      var add = document.getElementById(focus.addId);
+      el = add ? add.querySelector('[data-alias-input]') : null;
+    } else if (focus.kind === 'row') {
+      var rows = document.querySelectorAll('tr.row');
+      var match = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].getAttribute('data-type') === focus.type && rows[i].getAttribute('data-key') === focus.id) {
+          match = rows[i];
+          break;
+        }
+      }
+      el = match ? catalogField(match, focus.field) : null;
+    }
+    if (!el || el.disabled) return;
+    el.focus();
+    if (focus.start == null || typeof el.setSelectionRange !== 'function') return;
+    var max = typeof el.value === 'string' ? el.value.length : 0;
+    var nextStart = Math.min(focus.start, max);
+    var nextEnd = focus.end == null ? nextStart : Math.min(focus.end, max);
+    try { el.setSelectionRange(nextStart, nextEnd); } catch (err) {}
+  }
+  function withCatalogFocus(fn) {
+    var focus = catalogFocus();
+    var result = fn();
+    restoreCatalogFocus(focus);
+    return result;
+  }
   function refreshCatalog() {
     var pending = snapshotPending();
-    render();
-    return rebasePending(pending);
+    return withCatalogFocus(function () {
+      render();
+      return rebasePending(pending);
+    });
   }
   function applyCatalog(series, characters) {
     var pending = snapshotPending();
     state.series = series;
     state.characters = characters;
-    render();
-    var result = rebasePending(pending);
+    var result = withCatalogFocus(function () {
+      render();
+      return rebasePending(pending);
+    });
     if (result.gone) {
       showStatus(status, result.gone === 1
         ? 'Someone else deleted a row you were editing.'

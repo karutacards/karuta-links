@@ -68,6 +68,8 @@ describe('draft HTML', () => {
     expect(page).toContain('class="activity-panel"')
     expect(page).toContain('activity-fill')
     expect(page).toContain('function syncActivityHeight')
+    expect(page).toContain('function withCatalogFocus')
+    expect(page).toContain('restoreCatalogFocus(focus)')
     expect(page).toContain('min-height: 0')
     expect(page).toContain('max-height: min(100%, calc(100dvh - 2.25rem))')
     expect(page).toContain('"catalog"')
