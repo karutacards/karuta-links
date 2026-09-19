@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { bearerToken, tokensMatch } from './auth'
+import { dispatchCatalogRefresh } from './catalog-refresh'
 import { getContestDocument, getDocument, insertContentDump, listRecentContests, listRecentContent, resolveSlug } from './db'
 import { renderContentDump, renderContestDump, renderContestHome, renderHome, renderNotFound } from './html'
 import { IngestError, MAX_INGEST_BYTES, parseContentSnapshot } from './ingest'
@@ -78,6 +79,7 @@ app.post('/api/v1/content', async (c) => {
     if (c.env.IMAGES) {
       c.executionCtx.waitUntil(ensureSnapshotImages(c.env.IMAGES, snapshot))
     }
+    c.executionCtx.waitUntil(dispatchCatalogRefresh(c.env, created.id))
     const path = `/content/${created.id}`
     const shortPath = `/${created.slug}`
     return json({

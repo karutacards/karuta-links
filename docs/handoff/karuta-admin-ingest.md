@@ -33,6 +33,8 @@ Store `INGEST_TOKEN` in Doppler or Admin env under that name. Never commit the v
 
 Log the dump id and counts when the POST fails. Do not fail the Karuta publish. Do not retry in a tight loop.
 
+After a successful insert, krta.cc may dispatch `karuta-catalog-refresh` so karuta.cards pulls S3 into R2. That is not this POST. Soft and silent publishes still skip krta.cc and wait for the daily catalog job.
+
 ## Out of scope for the first Admin patch
 
 - Discord embed short URL

@@ -9,6 +9,9 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "vars": {
+    "CATALOG_DISPATCH_REPO": "karutacards/karuta-submissions"
+  },
   "triggers": {
     "crons": ["* * * * *"]
   },

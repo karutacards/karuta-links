@@ -4,6 +4,7 @@ One Cloudflare Worker serves HTML, redirects, content ingest and a one-minute Ca
 
 ```
 POST /api/v1/content  -->  D1 documents + slugs
+                      -->  waitUntil GitHub repository_dispatch (catalog refresh)
 GET  /content/{id}    <--  snapshot HTML
 GET  /contests        <--  recent Card Hunt dumps
 GET  /contests/{id}   <--  contest snapshot HTML
@@ -36,6 +37,8 @@ Every minute the Worker reads `contests/card_hunt`. If `eventCounter` is greater
 ## Auth
 
 `INGEST_TOKEN` is a Worker secret for content ingest. Local development reads `.dev.vars`. Public routes do not require auth. Contest dumps are not ingested over HTTP.
+
+A successful content ingest may also `waitUntil` GitHub `repository_dispatch` (`karuta-catalog-refresh`) so karuta.cards can refresh shared `karuta-data` R2 from S3. That uses `GITHUB_DISPATCH_TOKEN` and `CATALOG_DISPATCH_REPO`. A missing token or a failed dispatch does not change the ingest `201`. krta.cc does not pull or store `production.json`.
 
 Discord identify is wired and unadvertised. Start and callback routes live under `/api/auth`. A signed session cookie is issued when the Discord application credentials and a session signing key are set. Missing credentials return `503` on those two routes. `GET /api/auth/me` reports the cookie. `POST /api/auth/logout` clears it. Dumps stay public. There is no login control on dump HTML. Draft pages require a session and drafts.config.json.
 

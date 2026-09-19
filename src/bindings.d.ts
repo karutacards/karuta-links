@@ -5,4 +5,6 @@ interface __BaseEnv_Env {
   DISCORD_CLIENT_SECRET?: string
   SESSION_SECRET?: string
   KARUTA_DATA?: R2Bucket
+  GITHUB_DISPATCH_TOKEN?: string
+  CATALOG_DISPATCH_REPO?: string
 }
