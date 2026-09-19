@@ -60,7 +60,7 @@ export function isRestorableAuditAction(action: string): boolean {
 }
 
 export function isSaveAuditAction(action: string): boolean {
-  return action === 'add' || action === 'update' || action === 'delete' || action === 'describe'
+  return action === 'add' || action === 'update' || action === 'delete'
 }
 
 export type DraftActivityGroupKind = 'import' | 'save' | 'note'
@@ -100,7 +100,7 @@ export function groupDraftActivity<T extends {
       return
     }
     var saveAction = row.action === 'add' || row.action === 'update'
-      || row.action === 'delete' || row.action === 'describe'
+      || row.action === 'delete'
     if (saveAction && row.saveId != null) {
       if (last && last.kind === 'save' && last.saveId === row.saveId) {
         last.events.push(row)

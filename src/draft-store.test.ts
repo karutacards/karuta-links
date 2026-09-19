@@ -211,6 +211,7 @@ describe('draft events store', () => {
     })
     await setDraftDescription(changed.db, 2, '  Season 3 notes.  ', '1', 'craig', 50)
     expect(changed.queries.some((query) => query.sql.includes("'describe'"))).toBe(true)
+    expect(changed.queries.some((query) => query.sql.includes('save_id') && query.sql.includes('NULL'))).toBe(true)
 
     const same = mockDb({
       draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: 'Season 3 notes.' },

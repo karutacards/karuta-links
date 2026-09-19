@@ -286,11 +286,9 @@ export function registerDrafts(
         id,
         (body as { description: string }).description,
         auth.session.discordId,
-        auth.session.username,
-        Date.now(),
-        parseOptionalSaveId(body)
+        auth.session.username
       )
-      return json({ description: result.draft.description, saveId: result.saveId })
+      return json({ description: result.draft.description })
     } catch (error) {
       if (error instanceof DraftError) {
         return draftErrorResponse(error)
@@ -380,7 +378,11 @@ export function registerDrafts(
         Date.now(),
         parseOptionalSaveId(body)
       )
-      return json({ entity: result.entity, saveId: result.saveId })
+      return json({
+        entity: result.entity,
+        saveId: result.saveId,
+        adoptedSeries: result.adoptedSeries
+      })
     } catch (error) {
       if (error instanceof DraftError) {
         return draftErrorResponse(error)

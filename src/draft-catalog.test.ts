@@ -68,6 +68,16 @@ describe('draft catalog', () => {
     })
   })
 
+  it('rejects a duplicate character name on the same series', () => {
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Naruto' }],
+      characters: [
+        { name: 'Neji Hyuuga', seriesKey: 'naruto' },
+        { name: 'neji hyuuga', seriesKey: 'Naruto' }
+      ]
+    })).toThrow('That character is already on this series.')
+  })
+
   it('rejects a character whose series is not on the draft', () => {
     expect(() => parseDraftCatalog({
       characters: [{ name: 'Hero', seriesKey: 'Jujutsu Kaisen' }]

@@ -191,22 +191,44 @@ describe('draft mutation', () => {
     })
   })
 
-  it('rejects adding a character to a series that is not on the draft', () => {
+  it('adopts a missing series name as a live update', () => {
+    const result = applyDraftMutation(
+      null,
+      { type: 'character', action: 'add', name: 'Hero', seriesKey: 'Missing' },
+      new Set(),
+      '2',
+      'second',
+      [{ key: 'new-series', name: 'New Series' }]
+    )
+    expect(result.entity).toMatchObject({
+      type: 'character',
+      seriesKey: 'missing'
+    })
+    expect(result.adoptedSeries).toMatchObject({
+      type: 'series',
+      key: 'missing',
+      name: 'Missing',
+      importAction: 'update'
+    })
+  })
+
+  it('rejects a duplicate character name on the same series', () => {
     try {
       applyDraftMutation(
         null,
-        { type: 'character', action: 'add', name: 'Hero', seriesKey: 'Missing' },
+        { type: 'character', action: 'add', name: 'Hero', seriesKey: 'New Series' },
         new Set(),
         '2',
         'second',
-        [{ key: 'new-series', name: 'New Series' }]
+        [{ key: 'new-series', name: 'New Series' }],
+        [{ key: 'hero', name: 'Hero', seriesKey: 'new-series' }]
       )
-      throw new Error('expected missing series')
+      throw new Error('expected duplicate')
     } catch (error) {
       expect(error).toBeInstanceOf(DraftError)
       expect(error).toMatchObject({
         code: 'INVALID_INPUT',
-        message: 'That series is not on this draft.'
+        message: 'That character is already on this series.'
       })
     }
   })

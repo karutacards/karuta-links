@@ -198,6 +198,7 @@ describe('draft activity restore replay', () => {
     expect(isRestorableAuditAction('lock')).toBe(false)
     expect(isRestorableAuditAction('unlock')).toBe(false)
     expect(isSaveAuditAction('update')).toBe(true)
+    expect(isSaveAuditAction('describe')).toBe(false)
     expect(isSaveAuditAction('import')).toBe(false)
     expect(liveActivityIds([
       { id: 1, action: 'import' },
@@ -224,7 +225,7 @@ describe('draft activity restore replay', () => {
       { kind: 'import', saveId: null, events: [{ id: 1, action: 'import' }, { id: 2, action: 'import' }] },
       { kind: 'save', saveId: 10, events: [{ id: 3, action: 'update', saveId: 10 }, { id: 4, action: 'delete', saveId: 10 }] },
       { kind: 'note', saveId: null, events: [{ id: 5, action: 'lock' }] },
-      { kind: 'save', saveId: 11, events: [{ id: 6, action: 'describe', saveId: 11 }] }
+      { kind: 'note', saveId: null, events: [{ id: 6, action: 'describe', saveId: 11 }] }
     ])
     expect(catalogsMatch({
       description: 'Hold.',

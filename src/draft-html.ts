@@ -276,6 +276,32 @@ function layout(title: string, body: string, script = ''): string {
     }
     .banner.error { border-color: var(--danger); color: var(--danger); }
     .banner.ok { border-color: var(--ok); color: var(--ok); }
+    .banner.warn { border-color: var(--accent); color: var(--accent); }
+    .field-hint {
+      margin: 0.3rem 0 0;
+      color: var(--accent);
+      font-size: 0.75rem;
+      line-height: 1.35;
+    }
+    .field-hint[hidden] { display: none; }
+    .name-row {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+    .name-row input { flex: 1; min-width: 0; }
+    .import-tag {
+      flex: none;
+      padding: 0.1rem 0.35rem;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 0.625rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
     button, .file {
       min-height: 2rem;
       padding: 0.2rem 0.5rem;
@@ -388,13 +414,51 @@ function layout(title: string, body: string, script = ''): string {
       margin-left: auto;
     }
     @media (max-width: 39.99rem) {
-      .name { width: 28%; }
-      .series { width: 22%; }
+      .wrap { overflow: visible; }
+      .catalog table,
+      .catalog thead,
+      .catalog tbody,
+      .catalog tr,
+      .catalog th,
+      .catalog td {
+        display: block;
+        width: 100%;
+        max-width: none;
+      }
+      .catalog thead { display: none; }
+      .catalog tr.row,
+      .catalog tr.add-row {
+        padding: 0.7rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .catalog th,
+      .catalog td {
+        padding: 0.2rem 0;
+        border-bottom: 0;
+      }
+      .catalog td.name::before,
+      .catalog td.series::before,
+      .catalog td.aliases-cell::before {
+        content: attr(data-label);
+        display: block;
+        margin: 0 0 0.2rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+      }
+      .name, .series { width: auto; }
+      .catalog th.edited,
+      .catalog td.edited { display: none; }
       .acts {
         width: auto;
-        white-space: normal;
+        white-space: nowrap;
       }
-      .acts-row, .acts-edit { flex-wrap: wrap; }
+      .acts-row, .acts-edit {
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+      }
     }
     @media (min-width: 64rem) {
       .name { width: 16rem; }
@@ -600,18 +664,18 @@ export function renderDraftEditor(
   const addSeries = locked
     ? ''
     : `<tr class="add-row" id="add-series-card">
-         <td><input id="add-series-name" aria-label="Name" autocomplete="off"></td>
-         <td>${aliasCell('add-series-aliases')}</td>
-         <td></td>
+         <td class="name" data-label="Name"><input id="add-series-name" aria-label="Name" autocomplete="off"></td>
+         <td class="aliases-cell" data-label="Aliases">${aliasCell('add-series-aliases')}</td>
+         <td class="edited"></td>
          <td class="acts"><div class="acts-row"><button type="button" id="add-series" disabled>Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
        </tr>`
   const addCharacter = locked
     ? ''
     : `<tr class="add-row" id="add-character-card">
-         <td><input id="add-character-name" aria-label="Name" autocomplete="off"></td>
-         <td><input id="add-character-series" aria-label="Series" autocomplete="off"></td>
-         <td>${aliasCell('add-character-aliases')}</td>
-         <td></td>
+         <td class="name" data-label="Name"><input id="add-character-name" aria-label="Name" autocomplete="off"></td>
+         <td class="series" data-label="Series"><input id="add-character-series" aria-label="Series" autocomplete="off"></td>
+         <td class="aliases-cell" data-label="Aliases">${aliasCell('add-character-aliases')}</td>
+         <td class="edited"></td>
          <td class="acts"><div class="acts-row"><button type="button" id="add-character" disabled>Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
        </tr>`
   return layout(

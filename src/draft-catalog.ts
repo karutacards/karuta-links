@@ -56,6 +56,10 @@ export function resolveDraftSeriesKey(raw: unknown, series: readonly DraftSeries
   return ''
 }
 
+export function characterIdentity(name: string, seriesKey: string): string {
+  return `${name.trim().toLowerCase()}\0${seriesKey}`
+}
+
 export function uniqueDraftKey(name: string, used: Set<string>): string {
   const primary = draftKey(name)
   if (!primary) {
@@ -182,6 +186,7 @@ export function parseDraftCatalog(raw: unknown): {
   }
 
   const usedCharacters = new Set<string>()
+  const usedIdentities = new Set<string>()
   const characters: DraftCharacterInput[] = []
   for (const item of charactersRaw) {
     if (!item || typeof item !== 'object') {
@@ -192,8 +197,13 @@ export function parseDraftCatalog(raw: unknown): {
     if (!seriesKey) {
       throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
     }
+    const identity = characterIdentity(name, seriesKey)
+    if (usedIdentities.has(identity)) {
+      throw new DraftError('INVALID_INPUT', 'That character is already on this series.', 400)
+    }
     const key = cleanKey(item.key, name, usedCharacters)
     usedCharacters.add(key)
+    usedIdentities.add(identity)
     characters.push({
       key,
       name,

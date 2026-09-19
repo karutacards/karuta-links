@@ -438,7 +438,7 @@ export async function mutateDraftEntity(
   editorName: string,
   now = Date.now(),
   saveId: number | null = null
-): Promise<{ entity: DraftEntity | null; saveId: number }> {
+): Promise<{ entity: DraftEntity | null; saveId: number; adoptedSeries?: DraftSeries }> {
   const draft = await getDraftRow(db, draftId)
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
@@ -469,13 +469,25 @@ export async function mutateDraftEntity(
     key: row.entity_key,
     name: row.name
   }))
+  const characterRows = mutation.type === 'character'
+    ? await db.prepare(
+      `SELECT entity_key, name, series_key FROM draft_entities
+       WHERE draft_id = ? AND entity_type = 'character'`
+    ).bind(draftId).all<{ entity_key: string; name: string; series_key: string | null }>()
+    : { results: [] as { entity_key: string; name: string; series_key: string | null }[] }
+  const draftCharacters = (characterRows.results ?? []).map((row) => ({
+    key: row.entity_key,
+    name: row.name,
+    seriesKey: row.series_key ?? ''
+  }))
   const result = applyDraftMutation(
     current,
     mutation,
     usedKeys,
     editorId,
     editorName,
-    draftSeries
+    draftSeries,
+    draftCharacters
   )
   const batchSaveId = await resolveSaveId(db, draftId, saveId)
   const statements = [
@@ -523,7 +535,43 @@ export async function mutateDraftEntity(
         )
       }
     }
-  } else if (result.entity && result.action === 'add') {
+  }
+  if (result.adoptedSeries) {
+    const series = result.adoptedSeries
+    const seriesRefs = [...draftSeries, { key: series.key, name: series.name }]
+    statements.push(
+      db.prepare(
+        `INSERT INTO draft_entities
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         VALUES (?, 'series', ?, ?, NULL, ?, ?, ?, 1, ?, ?)`
+      ).bind(
+        draftId,
+        series.key,
+        series.name,
+        JSON.stringify(series.aliases),
+        series.importAction,
+        JSON.stringify(series.baseAliases),
+        editorId,
+        editorName
+      ),
+      db.prepare(
+        `INSERT INTO draft_audit
+         (draft_id, entity_type, entity_key, action, before_json, after_json,
+          discord_id, username, created_at, save_id)
+         VALUES (?, 'series', ?, 'add', NULL, ?, ?, ?, ?, ?)`
+      ).bind(
+        draftId,
+        series.key,
+        entityPayload(series, seriesRefs),
+        editorId,
+        editorName,
+        now,
+        batchSaveId
+      )
+    )
+  }
+  if (result.entity && result.action === 'add') {
     statements.push(
       db.prepare(
         `INSERT INTO draft_entities
@@ -565,6 +613,9 @@ export async function mutateDraftEntity(
       )
     )
   }
+  const payloadSeries = result.adoptedSeries
+    ? [...draftSeries, { key: result.adoptedSeries.key, name: result.adoptedSeries.name }]
+    : draftSeries
   statements.push(
     db.prepare(
       `INSERT INTO draft_audit
@@ -576,8 +627,8 @@ export async function mutateDraftEntity(
       mutation.type,
       result.entity?.key ?? current?.key ?? key,
       result.action,
-      result.before ? entityPayload(result.before, draftSeries) : null,
-      result.after ? entityPayload(result.after, draftSeries) : null,
+      result.before ? entityPayload(result.before, payloadSeries) : null,
+      result.after ? entityPayload(result.after, payloadSeries) : null,
       editorId,
       editorName,
       now,
@@ -585,7 +636,7 @@ export async function mutateDraftEntity(
     )
   )
   const outcomes = await db.batch(statements)
-  const write = outcomes[1]
+  const write = result.adoptedSeries ? outcomes[3] : outcomes[1]
   if (result.action !== 'add' && write && 'meta' in write && write.meta.changes === 0) {
     const latest = key ? await getEntityRow(db, draftId, mutation.type, key) : null
     throw new DraftError(
@@ -597,7 +648,11 @@ export async function mutateDraftEntity(
       latest ? rowToEntity(latest) : null
     )
   }
-  return { entity: result.entity, saveId: batchSaveId }
+  return {
+    entity: result.entity,
+    saveId: batchSaveId,
+    adoptedSeries: result.adoptedSeries
+  }
 }
 
 async function readDraftOrThrow(db: D1Database, draftId: number): Promise<DraftRecord> {
@@ -676,9 +731,8 @@ export async function setDraftDescription(
   description: string,
   editorId: string,
   editorName: string,
-  now = Date.now(),
-  saveId: number | null = null
-): Promise<{ draft: DraftRecord; saveId: number | null }> {
+  now = Date.now()
+): Promise<{ draft: DraftRecord }> {
   const draft = await getDraftRow(db, draftId)
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
@@ -689,9 +743,8 @@ export async function setDraftDescription(
   }
   const current = draft.description ?? ''
   if (current === next) {
-    return { draft: await readDraftOrThrow(db, draftId), saveId }
+    return { draft: await readDraftOrThrow(db, draftId) }
   }
-  const batchSaveId = await resolveSaveId(db, draftId, saveId)
   await db.batch([
     db.prepare(
       `UPDATE drafts SET description = ?, updated_at = ? WHERE id = ?`
@@ -700,18 +753,17 @@ export async function setDraftDescription(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
         discord_id, username, created_at, save_id)
-       VALUES (?, 'draft', '', 'describe', ?, ?, ?, ?, ?, ?)`
+       VALUES (?, 'draft', '', 'describe', ?, ?, ?, ?, ?, NULL)`
     ).bind(
       draftId,
       JSON.stringify({ description: current }),
       JSON.stringify({ description: next }),
       editorId,
       editorName,
-      now,
-      batchSaveId
+      now
     )
   ])
-  return { draft: await readDraftOrThrow(db, draftId), saveId: batchSaveId }
+  return { draft: await readDraftOrThrow(db, draftId) }
 }
 
 async function listAllDraftAudit(db: D1Database, draftId: number): Promise<DraftAuditRow[]> {
@@ -729,7 +781,7 @@ function resolveRestoreTarget(
   audits: readonly DraftAuditRow[],
   requested: number
 ): { throughId: number; saveId: number; createdAt: number } {
-  const ofSave = audits.filter((row) => row.saveId === requested)
+  const ofSave = audits.filter((row) => row.saveId === requested && isSaveAuditAction(row.action))
   if (ofSave.length) {
     return {
       throughId: lastEventIdForSave(ofSave, requested) ?? ofSave[ofSave.length - 1].id,

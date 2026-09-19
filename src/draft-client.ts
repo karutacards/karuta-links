@@ -6,7 +6,31 @@ function showStatus(el, message, isError) {
   if (!el) return;
   el.hidden = !message;
   el.textContent = message || '';
-  el.className = 'banner ' + (isError ? 'error' : 'ok');
+  el.className = 'banner ' + (isError === 'warn' ? 'warn' : (isError ? 'error' : 'ok'));
+}
+function draftKey(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9- ]/g, '')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .join('-');
+}
+function seriesOnDraft(label, series) {
+  var trimmed = String(label || '').trim();
+  if (!trimmed) return false;
+  var slug = draftKey(trimmed);
+  var rows = series || [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].key === trimmed || rows[i].key === slug) return true;
+    if (String(rows[i].name || '').toLowerCase() === trimmed.toLowerCase()) return true;
+    if (slug && draftKey(rows[i].name) === slug) return true;
+  }
+  return false;
+}
+function seriesHintText() {
+  return 'This series is not on this draft. Confirm it matches the exact name in Karuta. It will be treated as an update.';
 }
 function aliasEditorHtml() {
   return '<div class="aliases">' +
@@ -272,18 +296,21 @@ function entityRow(entity, locked, series) {
   var historyBtn = entity.lastEditorName
     ? '<button type="button" data-audit="1" aria-haspopup="dialog">History</button>'
     : '';
+  var live = entity.importAction === 'update';
+  var liveTag = live
+    ? '<span class="import-tag" title="Imported as an update. The name cannot be edited or deleted.">Update</span>'
+    : '';
   var nameCell = locked
-    ? '<td class="name"></td>'
-    : '<td class="name"><input data-field="name" aria-label="Name" autocomplete="off"></td>';
+    ? '<td class="name" data-label="Name"><div class="name-row"></div></td>'
+    : '<td class="name" data-label="Name"><div class="name-row"><input data-field="name" aria-label="Name" autocomplete="off">' + liveTag + '</div></td>';
   var seriesCell = entity.type === 'character'
     ? (locked
-      ? '<td class="series"></td>'
-      : '<td class="series"><input data-field="seriesKey" aria-label="Series" autocomplete="off"></td>')
+      ? '<td class="series" data-label="Series"></td>'
+      : '<td class="series" data-label="Series"><input data-field="seriesKey" aria-label="Series" autocomplete="off"></td>')
     : '';
   var aliasCell = locked
-    ? '<td><div class="aliases"><ul class="alias-list" data-alias-list></ul></div></td>'
-    : '<td>' + aliasEditorHtml() + '</td>';
-  var live = entity.importAction === 'update';
+    ? '<td class="aliases-cell" data-label="Aliases"><div class="aliases"><ul class="alias-list" data-alias-list></ul></div></td>'
+    : '<td class="aliases-cell" data-label="Aliases">' + aliasEditorHtml() + '</td>';
   var deleteBtn = live
     ? ''
     : '<button type="button" class="danger" data-delete="1">Delete</button>';
@@ -297,7 +324,15 @@ function entityRow(entity, locked, series) {
     '<td class="edited"><span data-last-edit></span></td>' +
     acts;
   if (locked) {
-    wrap.querySelector('.name').textContent = entity.name;
+    var nameBox = wrap.querySelector('.name-row') || wrap.querySelector('.name');
+    nameBox.textContent = entity.name;
+    if (live && nameBox) {
+      var tag = document.createElement('span');
+      tag.className = 'import-tag';
+      tag.title = 'Imported as an update. The name cannot be edited or deleted.';
+      tag.textContent = 'Update';
+      nameBox.append(tag);
+    }
     var seriesCellEl = wrap.querySelector('.series');
     if (seriesCellEl) seriesCellEl.textContent = seriesDisplay(entity.seriesKey, series);
   }
@@ -363,6 +398,44 @@ window.krtaDraftEditor = function () {
     var list = type === 'series' ? state.series : state.characters;
     for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
     return null;
+  }
+  function resolvedSeriesKey(label) {
+    var trimmed = String(label || '').trim();
+    if (!trimmed) return '';
+    if (seriesOnDraft(trimmed, state.series)) {
+      for (var i = 0; i < state.series.length; i++) {
+        var item = state.series[i];
+        var slug = draftKey(trimmed);
+        if (item.key === trimmed || item.key === slug) return item.key;
+        if (String(item.name || '').toLowerCase() === trimmed.toLowerCase()) return item.key;
+        if (slug && draftKey(item.name) === slug) return item.key;
+      }
+    }
+    return draftKey(trimmed);
+  }
+  function characterDuplicate(name, seriesLabel, exceptKey) {
+    var seriesKey = resolvedSeriesKey(seriesLabel);
+    if (!name || !seriesKey) return false;
+    var identity = String(name).trim().toLowerCase() + '\\0' + seriesKey;
+    return state.characters.some(function (item) {
+      if (exceptKey && item.key === exceptKey) return false;
+      return (String(item.name || '').trim().toLowerCase() + '\\0' + item.seriesKey) === identity;
+    });
+  }
+  function syncSeriesHint(input) {
+    if (!input) return;
+    var td = input.closest('td');
+    if (!td) return;
+    var hint = td.querySelector('.field-hint');
+    if (!hint) {
+      hint = document.createElement('p');
+      hint.className = 'field-hint';
+      td.append(hint);
+    }
+    var label = input.value.trim();
+    var warn = !!label && !seriesOnDraft(label, state.series);
+    hint.hidden = !warn;
+    hint.textContent = warn ? seriesHintText() : '';
   }
   function captureEdit(row) {
     var type = row.dataset.type;
@@ -436,7 +509,7 @@ window.krtaDraftEditor = function () {
     setPending(row.querySelector('td.name'), nameDirty);
     setPending(row.querySelector('td.series'), seriesDirty);
     setPending(aliasCell(row), aliasDirty);
-    setPending(row.querySelector('td.acts'), ready && !conflicted);
+    syncSeriesHint(seriesInput);
     syncSaveAll();
   }
   function syncAddRow(row) {
@@ -453,10 +526,9 @@ window.krtaDraftEditor = function () {
     setPending(name ? name.closest('td') : null, nameDirty);
     setPending(series ? series.closest('td') : null, seriesDirty);
     setPending(aliasCell(row), aliasDirty);
-    setPending(row.querySelector('td.acts'), ready);
     var button = row.querySelector('#add-series, #add-character');
     if (button) button.disabled = !ready;
-    setPending(button, ready);
+    syncSeriesHint(series);
     var discard = row.querySelector('#discard-series, #discard-character');
     if (discard) discard.disabled = !dirty;
     syncSaveAll();
@@ -810,6 +882,19 @@ window.krtaDraftEditor = function () {
   }
   async function save(mutation, options) {
     var silent = !!(options && options.silent);
+    if (mutation.type === 'character' && mutation.action !== 'delete') {
+      var seriesLabel = mutation.seriesKey;
+      if (!seriesLabel && mutation.key) {
+        var currentCharacter = findEntity('character', mutation.key);
+        seriesLabel = currentCharacter
+          ? seriesDisplay(currentCharacter.seriesKey, state.series)
+          : '';
+      }
+      if (characterDuplicate(mutation.name, seriesLabel, mutation.key)) {
+        if (!silent) showStatus(status, 'That character is already on this series.', true);
+        return { ok: false, body: { error: 'That character is already on this series.', code: 'INVALID_INPUT' } };
+      }
+    }
     var cascadeCount = 0;
     if (mutation.action === 'delete' && mutation.type === 'series') {
       cascadeCount = state.characters.filter(function (item) {
@@ -864,7 +949,10 @@ window.krtaDraftEditor = function () {
           removeEntity('character', item.key);
         });
       }
-    } else if (result.body && result.body.entity) replaceEntity(result.body.entity);
+    } else if (result.body && result.body.entity) {
+      if (result.body.adoptedSeries) replaceEntity(result.body.adoptedSeries);
+      replaceEntity(result.body.entity);
+    }
     if (!silent) {
       render();
       showStatus(status, cascadeCount
@@ -917,11 +1005,10 @@ window.krtaDraftEditor = function () {
     var saveButton = document.getElementById('save-all');
     var discardButton = document.getElementById('discard-all');
     var savable = dirtyRows().some(function (item) { return rowReadyToSave(item.edit); });
-    var rowDirty = savable || descriptionDirty();
     var anyDirty = dirtyRows().length > 0 || descriptionDirty() || addFormsDirty();
     if (saveButton) {
-      saveButton.disabled = !rowDirty || saveAllBusy;
-      setPending(saveButton, rowDirty && !saveAllBusy);
+      saveButton.disabled = !savable || saveAllBusy;
+      setPending(saveButton, savable && !saveAllBusy);
     }
     if (discardButton) discardButton.disabled = !anyDirty;
   }
@@ -949,10 +1036,6 @@ window.krtaDraftEditor = function () {
     saveAllBusy = true;
     syncSaveAll();
     var batchSaveId = null;
-    if (descriptionDirty()) {
-      var described = await commitDescription(batchSaveId);
-      if (described && described.saveId != null) batchSaveId = described.saveId;
-    }
     var pending = dirtyRows().filter(function (item) {
       var row = findRow(item.edit.type, item.edit.key);
       if (row && row.querySelector('[data-conflict]')) return false;
@@ -1260,12 +1343,13 @@ window.krtaDraftEditor = function () {
     addSeries.addEventListener('click', async function () {
       var name = document.getElementById('add-series-name');
       if (!name || !name.value.trim()) return;
-      await save({
+      var result = await save({
         type: 'series',
         action: 'add',
         name: name ? name.value : '',
         aliases: collectAliases(document.getElementById('add-series-aliases'))
       });
+      if (result.ok) discardAddRow(addSeriesRow);
     });
   }
   var addCharacter = document.getElementById('add-character');
@@ -1274,13 +1358,18 @@ window.krtaDraftEditor = function () {
       var name = document.getElementById('add-character-name');
       var seriesKey = document.getElementById('add-character-series');
       if (!name || !name.value.trim() || !seriesKey || !seriesKey.value.trim()) return;
-      await save({
+      if (characterDuplicate(name.value, seriesKey.value)) {
+        showStatus(status, 'That character is already on this series.', true);
+        return;
+      }
+      var result = await save({
         type: 'character',
         action: 'add',
         name: name ? name.value : '',
         seriesKey: seriesKey ? seriesKey.value : '',
         aliases: collectAliases(document.getElementById('add-character-aliases'))
       });
+      if (result.ok) discardAddRow(addCharacterRow);
     });
   }
   function applyDescription(value) {
@@ -1307,7 +1396,6 @@ window.krtaDraftEditor = function () {
     }
     descriptionBusy = true;
     var payload = { description: next };
-    if (saveId != null) payload.saveId = saveId;
     var result = await api('/api/v1/drafts/' + state.id, {
       method: 'PATCH',
       body: JSON.stringify(payload)

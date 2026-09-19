@@ -1,4 +1,10 @@
-import { resolveDraftSeriesKey, uniqueDraftKey, type DraftSeriesRef } from './draft-catalog'
+import {
+  characterIdentity,
+  draftKey,
+  resolveDraftSeriesKey,
+  uniqueDraftKey,
+  type DraftSeriesRef
+} from './draft-catalog'
 import {
   DraftError,
   type DraftCharacter,
@@ -24,6 +30,13 @@ export type MutationResult = {
   entity: DraftEntity | null
   before: DraftEntity | null
   after: DraftEntity | null
+  adoptedSeries?: DraftSeries
+}
+
+export type DraftCharacterRef = {
+  key: string
+  name: string
+  seriesKey: string
 }
 
 function requireName(value: string | undefined): string {
@@ -72,6 +85,57 @@ function assertLiveRow(
   }
 }
 
+function assertUniqueCharacter(
+  name: string,
+  seriesKey: string,
+  key: string,
+  characters: readonly DraftCharacterRef[]
+): void {
+  const identity = characterIdentity(name, seriesKey)
+  for (const other of characters) {
+    if (other.key === key) {
+      continue
+    }
+    if (characterIdentity(other.name, other.seriesKey) === identity) {
+      throw new DraftError('INVALID_INPUT', 'That character is already on this series.', 400)
+    }
+  }
+}
+
+function adoptSeries(
+  raw: unknown,
+  series: readonly DraftSeriesRef[],
+  editorId: string,
+  editorName: string
+): { seriesKey: string; adopted?: DraftSeries } {
+  const resolved = resolveDraftSeriesKey(raw, series)
+  if (resolved) {
+    return { seriesKey: resolved }
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { seriesKey: '' }
+  }
+  const name = raw.trim()
+  const key = draftKey(name)
+  if (!key) {
+    return { seriesKey: '' }
+  }
+  return {
+    seriesKey: key,
+    adopted: {
+      type: 'series',
+      key,
+      name,
+      aliases: [],
+      importAction: 'update',
+      baseAliases: [],
+      revision: 1,
+      lastEditorId: editorId,
+      lastEditorName: editorName
+    }
+  }
+}
+
 function sameEntityContent(left: DraftEntity, right: DraftEntity): boolean {
   if (left.type !== right.type || left.name !== right.name || !sameAliases(left.aliases, right.aliases)) {
     return false
@@ -102,13 +166,29 @@ export function applyDraftMutation(
   usedKeys: Set<string>,
   editorId: string,
   editorName: string,
-  draftSeries: readonly DraftSeriesRef[] = []
+  draftSeries: readonly DraftSeriesRef[] = [],
+  draftCharacters: readonly DraftCharacterRef[] = []
 ): MutationResult {
   switch (mutation.action) {
     case 'add':
-      return addEntity(current, mutation, usedKeys, editorId, editorName, draftSeries)
+      return addEntity(
+        current,
+        mutation,
+        usedKeys,
+        editorId,
+        editorName,
+        draftSeries,
+        draftCharacters
+      )
     case 'update':
-      return updateEntity(current, mutation, editorId, editorName, draftSeries)
+      return updateEntity(
+        current,
+        mutation,
+        editorId,
+        editorName,
+        draftSeries,
+        draftCharacters
+      )
     case 'delete':
       return deleteEntity(current, mutation)
     default: {
@@ -124,7 +204,8 @@ function addEntity(
   usedKeys: Set<string>,
   editorId: string,
   editorName: string,
-  draftSeries: readonly DraftSeriesRef[]
+  draftSeries: readonly DraftSeriesRef[],
+  draftCharacters: readonly DraftCharacterRef[]
 ): MutationResult {
   if (current) {
     throw new DraftError(
@@ -142,40 +223,44 @@ function addEntity(
     throw new DraftError('INVALID_INPUT', 'That key is already in this draft.', 400)
   }
   const aliases = aliasesOf(mutation.aliases, [])
-  const entity: DraftEntity = mutation.type === 'series'
-    ? {
-        type: 'series',
-        key,
-        name,
-        aliases,
-        importAction: 'add',
-        baseAliases: [],
-        revision: 1,
-        lastEditorId: editorId,
-        lastEditorName: editorName
-      }
-    : {
-        type: 'character',
-        key,
-        name,
-        seriesKey: resolveDraftSeriesKey(mutation.seriesKey, draftSeries),
-        aliases,
-        importAction: 'add',
-        baseAliases: [],
-        revision: 1,
-        lastEditorId: editorId,
-        lastEditorName: editorName
-      }
-  if (entity.type === 'character' && !entity.seriesKey) {
-    throw new DraftError(
-      'INVALID_INPUT',
-      mutation.seriesKey && mutation.seriesKey.trim()
-        ? 'That series is not on this draft.'
-        : 'Each character needs a series.',
-      400
-    )
+  if (mutation.type === 'series') {
+    const entity: DraftSeries = {
+      type: 'series',
+      key,
+      name,
+      aliases,
+      importAction: 'add',
+      baseAliases: [],
+      revision: 1,
+      lastEditorId: editorId,
+      lastEditorName: editorName
+    }
+    return { action: 'add', entity, before: null, after: entity }
   }
-  return { action: 'add', entity, before: null, after: entity }
+  const adopted = adoptSeries(mutation.seriesKey, draftSeries, editorId, editorName)
+  if (!adopted.seriesKey) {
+    throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
+  }
+  assertUniqueCharacter(name, adopted.seriesKey, '', draftCharacters)
+  const entity: DraftCharacter = {
+    type: 'character',
+    key,
+    name,
+    seriesKey: adopted.seriesKey,
+    aliases,
+    importAction: 'add',
+    baseAliases: [],
+    revision: 1,
+    lastEditorId: editorId,
+    lastEditorName: editorName
+  }
+  return {
+    action: 'add',
+    entity,
+    before: null,
+    after: entity,
+    adoptedSeries: adopted.adopted
+  }
 }
 
 function updateEntity(
@@ -183,7 +268,8 @@ function updateEntity(
   mutation: DraftMutation,
   editorId: string,
   editorName: string,
-  draftSeries: readonly DraftSeriesRef[]
+  draftSeries: readonly DraftSeriesRef[],
+  draftCharacters: readonly DraftCharacterRef[]
 ): MutationResult {
   if (!current) {
     throw new DraftError('ENTITY_GONE', 'That entity was deleted.', 409, null)
@@ -201,10 +287,11 @@ function updateEntity(
   let next: DraftEntity
   const series = asSeries(current)
   const character = asCharacter(current)
+  const adopted = character && mutation.seriesKey !== undefined && mutation.seriesKey.trim() !== ''
+    ? adoptSeries(mutation.seriesKey, draftSeries, editorId, editorName)
+    : { seriesKey: character ? character.seriesKey : '', adopted: undefined }
   const nextSeriesKey = character
-    ? (mutation.seriesKey !== undefined && mutation.seriesKey.trim() !== ''
-      ? resolveDraftSeriesKey(mutation.seriesKey, draftSeries)
-      : character.seriesKey)
+    ? adopted.seriesKey
     : current.type === 'series' ? current.key : ''
   assertLiveRow(current, name, nextSeriesKey, aliases)
   if (series) {
@@ -219,14 +306,9 @@ function updateEntity(
   } else if (character) {
     const seriesKey = nextSeriesKey
     if (!seriesKey) {
-      throw new DraftError(
-        'INVALID_INPUT',
-        mutation.seriesKey && mutation.seriesKey.trim()
-          ? 'That series is not on this draft.'
-          : 'Each character needs a series.',
-        400
-      )
+      throw new DraftError('INVALID_INPUT', 'Each character needs a series.', 400)
     }
+    assertUniqueCharacter(name, seriesKey, character.key, draftCharacters)
     next = {
       ...character,
       name,
@@ -242,7 +324,13 @@ function updateEntity(
   if (sameEntityContent(current, next)) {
     throw new DraftError('INVALID_INPUT', 'Nothing about this row changed.', 400)
   }
-  return { action: 'update', entity: next, before: current, after: next }
+  return {
+    action: 'update',
+    entity: next,
+    before: current,
+    after: next,
+    adoptedSeries: adopted.adopted
+  }
 }
 
 function deleteEntity(current: DraftEntity | null, mutation: DraftMutation): MutationResult {
