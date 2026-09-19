@@ -58,22 +58,36 @@ export function meetsCredentials(stats: PlayerStats, config: DraftsConfig): bool
   return stats.drops >= minDrops || stats.grabs >= minGrabs || stats.purchases >= minPurchases
 }
 
-export function collectBlacklistIds(data: unknown): Set<string> {
-  const ids = new Set<string>()
-  if (!Array.isArray(data)) {
-    return ids
+function asDiscordId(value: unknown): string {
+  if (typeof value === 'string' && value.length > 0) {
+    return value
   }
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return String(value)
+  }
+  return ''
+}
+
+export function collectBlacklistIds(data: unknown): Set<string> {
+  if (!Array.isArray(data)) {
+    throw new Error('Blacklist must be an array.')
+  }
+  const ids = new Set<string>()
   for (const row of data) {
-    if (typeof row === 'string' && row.length > 0) {
-      ids.add(row)
+    if (typeof row === 'string' || typeof row === 'number') {
+      const id = asDiscordId(row)
+      if (id) ids.add(id)
       continue
     }
-    if (row && typeof row === 'object' && 'id' in row) {
-      const id = (row as { id: unknown }).id
-      if (typeof id === 'string' && id.length > 0) {
-        ids.add(id)
-      }
+    if (!row || typeof row !== 'object') {
+      continue
     }
+    const record = row as { id?: unknown; type?: unknown }
+    if (record.type != null && record.type !== 'User') {
+      continue
+    }
+    const id = asDiscordId(record.id)
+    if (id) ids.add(id)
   }
   return ids
 }

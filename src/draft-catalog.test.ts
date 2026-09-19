@@ -78,6 +78,18 @@ describe('draft catalog', () => {
     })).toThrow('That character is already on this series.')
   })
 
+  it('rejects names and aliases the Karuta font cannot display', () => {
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Chōno' }]
+    })).toThrow('Name contains characters the Karuta font cannot display.')
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Naruto', aliases: ['Chō'] }]
+    })).toThrow('An alias contains characters the Karuta font cannot display.')
+    expect(parseDraftCatalog({
+      series: [{ name: 'Zoë', aliases: ['Zoë'] }]
+    }).series[0]).toMatchObject({ name: 'Zoë', aliases: ['Zoë'] })
+  })
+
   it('rejects names and aliases over 200 characters', () => {
     const longName = 'A'.repeat(201)
     const longAlias = 'B'.repeat(201)

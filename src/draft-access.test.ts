@@ -15,8 +15,14 @@ const credentials = parseDraftsConfig({
 })
 
 describe('draft access', () => {
-  it('reads blacklist ids from records or strings', () => {
-    expect([...collectBlacklistIds([{ id: '1' }, '2', { id: 3 }])].sort()).toEqual(['1', '2'])
+  it('reads user blacklist ids from records or strings', () => {
+    expect([...collectBlacklistIds([
+      { type: 'User', id: '1' },
+      '2',
+      { type: 'User', id: 3 },
+      { type: 'Guild', id: '9' }
+    ])].sort()).toEqual(['1', '2', '3'])
+    expect(() => collectBlacklistIds({ users: [] })).toThrow('Blacklist must be an array.')
   })
 
   it('maps Firestore player stats to the submission bars', () => {
@@ -30,16 +36,23 @@ describe('draft access', () => {
   })
 
   it('denies a blacklisted user in every mode without naming the reason', async () => {
-    const decision = await evaluateDraftAccess('1', parseDraftsConfig({ access: 'open' }), {
+    const loaders = {
       isBlacklisted: async () => true,
       getPlayerStats: async () => ({ drops: 5000, grabs: 5000, purchases: 1 })
-    })
-    expect(decision).toEqual({
-      ok: false,
-      status: 403,
-      code: 'FORBIDDEN',
+    }
+    const denied = {
+      ok: false as const,
+      status: 403 as const,
+      code: 'FORBIDDEN' as const,
       message: ACCESS_DENIED_MESSAGE
-    })
+    }
+    await expect(evaluateDraftAccess('1', parseDraftsConfig({ access: 'open' }), loaders))
+      .resolves.toEqual(denied)
+    await expect(evaluateDraftAccess('1', parseDraftsConfig({
+      access: 'whitelist',
+      whitelist: ['1']
+    }), loaders)).resolves.toEqual(denied)
+    await expect(evaluateDraftAccess('1', credentials, loaders)).resolves.toEqual(denied)
   })
 
   it('allows an open, non-blacklisted user', async () => {

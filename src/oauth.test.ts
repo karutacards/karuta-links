@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from './app'
+import { resetBlacklistCache } from './draft-access'
 import { callbackRedirectUri } from './oauth'
 import { parseCookies, NEXT_COOKIE, SESSION_COOKIE, STATE_COOKIE } from './session'
 
@@ -15,12 +16,28 @@ function testEnv(overrides: Partial<Env> = {}): Env {
   }
 }
 
+async function gzipJson(value: unknown): Promise<ArrayBuffer> {
+  const encoded = new TextEncoder().encode(JSON.stringify(value))
+  const stream = new Blob([encoded]).stream().pipeThrough(new CompressionStream('gzip'))
+  return await new Response(stream).arrayBuffer()
+}
+
+async function envWithBlacklist(rows: unknown[]): Promise<Env> {
+  const bytes = await gzipJson(rows)
+  return testEnv({
+    KARUTA_DATA: {
+      get: async () => ({ arrayBuffer: async () => bytes })
+    } as unknown as R2Bucket
+  })
+}
+
 function firstCookie(response: Response, name: string): string | undefined {
   const match = response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${name}=`))
   return match?.split(';')[0]
 }
 
 afterEach(() => {
+  resetBlacklistCache()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -129,10 +146,11 @@ describe('oauth', () => {
       testEnv()
     )
     const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
+    const allowed = await envWithBlacklist([])
     const callback = await app.request(
       `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
       { headers: { Cookie: firstCookie(start, STATE_COOKIE) ?? '' } },
-      testEnv()
+      allowed
     )
     expect(callback.status).toBe(302)
     expect(callback.headers.get('Location')).toBe('/')
@@ -176,13 +194,46 @@ describe('oauth', () => {
     )
     const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
     const next = firstCookie(start, NEXT_COOKIE)
+    const allowed = await envWithBlacklist([])
     const callback = await app.request(
       `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
       { headers: { Cookie: `${firstCookie(start, STATE_COOKIE) ?? ''}; ${next ?? ''}` } },
-      testEnv()
+      allowed
     )
     expect(callback.status).toBe(302)
     expect(callback.headers.get('Location')).toBe('/drafts/import')
+  })
+
+  it('refuses a blacklisted Discord user before creating a session', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: '135694375647838208', username: 'tester' }), {
+          status: 200
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const start = await app.request(
+      'http://127.0.0.1:8787/api/auth/discord?next=/drafts/import',
+      {},
+      testEnv()
+    )
+    const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
+    const next = firstCookie(start, NEXT_COOKIE)
+    const blocked = await envWithBlacklist([
+      { type: 'User', id: '135694375647838208' }
+    ])
+    const callback = await app.request(
+      `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
+      { headers: { Cookie: `${firstCookie(start, STATE_COOKIE) ?? ''}; ${next ?? ''}` } },
+      blocked
+    )
+    expect(callback.status).toBe(403)
+    expect(await callback.text()).toContain('You do not have access to this draft.')
+    expect(firstCookie(callback, SESSION_COOKIE)).toBeUndefined()
   })
 
   it('reports an unauthenticated session', async () => {

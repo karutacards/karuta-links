@@ -1,3 +1,4 @@
+import { assertDraftFontText } from './draft-glyphs'
 import {
   DraftError,
   type DraftCatalogInput,
@@ -100,12 +101,13 @@ export function cleanDraftAliases(raw: unknown): string[] {
     if (alias.length > DRAFT_MAX_ALIAS) {
       throw new DraftError('INVALID_INPUT', 'An alias is too long.', 400)
     }
-    const key = alias.toLowerCase()
+    const allowed = assertDraftFontText(alias, 'alias')
+    const key = allowed.toLowerCase()
     if (seen.has(key)) {
       continue
     }
     seen.add(key)
-    aliases.push(alias)
+    aliases.push(allowed)
   }
   return aliases
 }
@@ -121,7 +123,7 @@ export function cleanDraftName(raw: unknown): string {
   if (name.length > DRAFT_MAX_NAME) {
     throw new DraftError('INVALID_INPUT', 'Name is too long.', 400)
   }
-  return name
+  return assertDraftFontText(name, 'name')
 }
 
 function cleanAction(raw: unknown): DraftImportAction {

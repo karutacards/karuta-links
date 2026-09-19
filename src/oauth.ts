@@ -1,4 +1,6 @@
 import type { Hono } from 'hono'
+import { draftAccessForEnv } from './draft-access'
+import { renderDraftForbidden, renderDraftUnavailable } from './draft-html'
 import {
   clearNextCookie,
   clearSessionCookie,
@@ -174,6 +176,21 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
     const user = await identifyUser(accessToken)
     if (!user) {
       return json({ error: 'Discord did not return a user.' }, 401)
+    }
+    const decision = await draftAccessForEnv(c.env, user.id)
+    if (!decision.ok) {
+      const headers = new Headers({
+        'content-type': 'text/html; charset=utf-8',
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        'x-frame-options': 'DENY'
+      })
+      headers.append('Set-Cookie', clearStateCookie(https))
+      headers.append('Set-Cookie', clearNextCookie(https))
+      return new Response(
+        decision.status === 503 ? renderDraftUnavailable() : renderDraftForbidden(),
+        { status: decision.status, headers }
+      )
     }
     const sessionCookie = await createSessionCookie(
       newSession(user.id, user.username),

@@ -1,9 +1,44 @@
+import { DRAFT_FONT_CODE_POINTS } from './draft-glyphs'
 import { rebaseDraftPending } from './draft-rebase'
 import { groupDraftActivity, lastEventIdForSave, liveActivityIds } from './draft-restore'
 
-export const DRAFT_CLIENT_SCRIPT = 'var rebaseDraftPending = ' + rebaseDraftPending.toString() + ';\nvar lastEventIdForSave = ' + lastEventIdForSave.toString() + ';\nvar groupDraftActivity = ' + groupDraftActivity.toString() + ';\nvar liveActivityIds = ' + liveActivityIds.toString() + ';\n' + `
+export const DRAFT_CLIENT_SCRIPT = 'var FONT_CODE_POINTS = ' + JSON.stringify(DRAFT_FONT_CODE_POINTS) + ';\nvar rebaseDraftPending = ' + rebaseDraftPending.toString() + ';\nvar lastEventIdForSave = ' + lastEventIdForSave.toString() + ';\nvar groupDraftActivity = ' + groupDraftActivity.toString() + ';\nvar liveActivityIds = ' + liveActivityIds.toString() + ';\n' + `
 var MAX_NAME = 200;
 var MAX_ALIAS = 200;
+var FONT_GLYPHS = {};
+FONT_CODE_POINTS.forEach(function (code) {
+  FONT_GLYPHS[String.fromCodePoint(code)] = true;
+});
+function keepDraftFontText(value) {
+  var text = String(value || '').normalize('NFC');
+  var next = '';
+  for (var i = 0; i < text.length; ) {
+    var point = text.codePointAt(i);
+    var ch = String.fromCodePoint(point);
+    i += ch.length;
+    if (FONT_GLYPHS[ch]) next += ch;
+  }
+  return next;
+}
+function draftFontError(value, kind) {
+  var text = String(value || '').normalize('NFC');
+  if (text.indexOf('  ') !== -1) {
+    return kind === 'alias'
+      ? 'An alias cannot contain repeated spaces.'
+      : 'Name cannot contain repeated spaces.';
+  }
+  for (var i = 0; i < text.length; ) {
+    var point = text.codePointAt(i);
+    var ch = String.fromCodePoint(point);
+    i += ch.length;
+    if (!FONT_GLYPHS[ch]) {
+      return kind === 'alias'
+        ? 'An alias contains characters the Karuta font cannot display.'
+        : 'Name contains characters the Karuta font cannot display.';
+    }
+  }
+  return '';
+}
 function showStatus(el, message, isError) {
   if (!el) return;
   el.hidden = !message;
@@ -86,6 +121,11 @@ function addAliasChip(list, raw, status, removable) {
   if (!alias) return false;
   if (alias.length > MAX_ALIAS) {
     showStatus(status, 'An alias is too long.', true);
+    return false;
+  }
+  var aliasFont = draftFontError(alias, 'alias');
+  if (aliasFont) {
+    showStatus(status, aliasFont, true);
     return false;
   }
   if (alias.indexOf('|') !== -1) {
@@ -929,16 +969,32 @@ window.krtaDraftEditor = function () {
         if (!silent) showStatus(status, 'Name is too long.', true);
         return { ok: false, body: { error: 'Name is too long.', code: 'INVALID_INPUT' } };
       }
+      var nameFont = draftFontError(saveName, 'name');
+      if (saveName && nameFont) {
+        if (!silent) showStatus(status, nameFont, true);
+        return { ok: false, body: { error: nameFont, code: 'INVALID_INPUT' } };
+      }
       var seriesName = String(mutation.seriesKey || '').trim();
       if (seriesName.length > MAX_NAME) {
         if (!silent) showStatus(status, 'Name is too long.', true);
         return { ok: false, body: { error: 'Name is too long.', code: 'INVALID_INPUT' } };
       }
+      var seriesFont = draftFontError(seriesName, 'name');
+      if (seriesName && seriesFont) {
+        if (!silent) showStatus(status, seriesFont, true);
+        return { ok: false, body: { error: seriesFont, code: 'INVALID_INPUT' } };
+      }
       var saveAliases = mutation.aliases || [];
       for (var ai = 0; ai < saveAliases.length; ai++) {
-        if (String(saveAliases[ai] || '').trim().length > MAX_ALIAS) {
+        var saveAlias = String(saveAliases[ai] || '').trim();
+        if (saveAlias.length > MAX_ALIAS) {
           if (!silent) showStatus(status, 'An alias is too long.', true);
           return { ok: false, body: { error: 'An alias is too long.', code: 'INVALID_INPUT' } };
+        }
+        var aliasErr = draftFontError(saveAlias, 'alias');
+        if (aliasErr) {
+          if (!silent) showStatus(status, aliasErr, true);
+          return { ok: false, body: { error: aliasErr, code: 'INVALID_INPUT' } };
         }
       }
     }
@@ -1392,6 +1448,17 @@ window.krtaDraftEditor = function () {
     if (field.id === 'draft-description') {
       syncDescriptionPending();
       return;
+    }
+    if (field instanceof HTMLInputElement && (
+      field.getAttribute('data-field') === 'name'
+      || field.getAttribute('data-field') === 'seriesKey'
+      || field.hasAttribute('data-alias-input')
+      || field.id === 'add-series-name'
+      || field.id === 'add-character-name'
+      || field.id === 'add-character-series'
+    )) {
+      var kept = keepDraftFontText(field.value);
+      if (kept !== field.value) field.value = kept;
     }
     var fieldRow = field.closest('tr.row');
     if (fieldRow) syncSaveButton(fieldRow);

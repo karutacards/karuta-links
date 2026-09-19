@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { app } from './app'
+import { resetBlacklistCache } from './draft-access'
 import { createSessionCookie, newSession, parseCookies, NEXT_COOKIE } from './session'
 
 function testEnv(overrides: Partial<Env> = {}): Env {
@@ -13,6 +14,10 @@ function testEnv(overrides: Partial<Env> = {}): Env {
     ...overrides
   }
 }
+
+afterEach(() => {
+  resetBlacklistCache()
+})
 
 describe('draft routes', () => {
   it('starts OAuth and keeps a draft return path', async () => {
@@ -55,6 +60,27 @@ describe('draft routes', () => {
     )
     expect(response.status).toBe(503)
     expect(await response.text()).toContain('Draft access could not be verified.')
+  })
+
+  it('refuses a blacklisted session on the draft page', async () => {
+    const encoded = new TextEncoder().encode(JSON.stringify([
+      { type: 'User', id: '1' }
+    ]))
+    const bytes = await new Response(
+      new Blob([encoded]).stream().pipeThrough(new CompressionStream('gzip'))
+    ).arrayBuffer()
+    const cookie = await createSessionCookie(newSession('1', 'tester'), 'test-session-secret', false)
+    const response = await app.request(
+      'http://127.0.0.1:8787/drafts/3',
+      { headers: { Cookie: cookie.split(';')[0] ?? '' } },
+      testEnv({
+        KARUTA_DATA: {
+          get: async () => ({ arrayBuffer: async () => bytes })
+        } as unknown as R2Bucket
+      })
+    )
+    expect(response.status).toBe(403)
+    expect(await response.text()).toContain('You do not have access to this draft.')
   })
 
   it('fails closed on draft events when access cannot be verified', async () => {
