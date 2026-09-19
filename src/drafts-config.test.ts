@@ -26,7 +26,7 @@ describe('drafts config', () => {
     )
   })
 
-  it('treats lock ids as a closed list', () => {
+  it('treats admin ids as a closed list', () => {
     const config = parseDraftsConfig({
       access: 'open',
       adminIds: ['1', '']

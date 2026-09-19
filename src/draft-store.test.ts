@@ -179,6 +179,32 @@ describe('draft events store', () => {
     expect(snapshot.reviews).toEqual([])
   })
 
+  it('skips the catalog and reviews when a poll has no entity events', async () => {
+    const { db, queries } = mockDb({
+      draft: {
+        id: 2,
+        created_at: 1,
+        updated_at: 2,
+        locked_at: null,
+        locked_by: null,
+        hidden_at: null,
+        description: 'Hi'
+      },
+      entities: [{ entity_type: 'series', entity_key: 'new-series', name: 'New Series' }],
+      audit: [],
+      presence: [{ discord_id: '1', username: 'craig' }]
+    })
+    const snapshot = await pollDraftEvents(db, 2, 8, '1', 'craig', 20_000)
+    expect(snapshot.after).toBe(8)
+    expect(snapshot.events).toEqual([])
+    expect(snapshot.series).toEqual([])
+    expect(snapshot.characters).toEqual([])
+    expect(snapshot.description).toBe('Hi')
+    expect(snapshot.reviews).toEqual([])
+    expect(queries.some((query) => query.sql.includes('FROM draft_entities'))).toBe(false)
+    expect(queries.some((query) => query.sql.includes('FROM draft_reviews'))).toBe(false)
+  })
+
   it('writes a lock audit row only when the draft was unlocked', async () => {
     const unlocked = mockDb({
       draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null },

@@ -544,25 +544,39 @@ export async function pollDraftEvents(
   now = Date.now(),
   editorAvatar = ''
 ): Promise<DraftEventsSnapshot> {
-  const draft = await getDraft(db, draftId)
-  if (!draft) {
+  const row = await getDraftRow(db, draftId)
+  if (!row) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
-  const events = await listDraftEvents(db, draftId, after, draft.series)
+  let events = await listDraftEvents(db, draftId, after)
+  const needsCatalog = events.some((entry) => (
+    entry.entityType === 'series' || entry.entityType === 'character'
+  ))
+  let series: DraftSeries[] = []
+  let characters: DraftCharacter[] = []
+  if (needsCatalog) {
+    const draft = await getDraft(db, draftId)
+    if (!draft) {
+      throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+    }
+    series = draft.series
+    characters = draft.characters
+    events = await listDraftEvents(db, draftId, after, draft.series)
+  }
   const presence = await touchDraftPresence(db, draftId, editorId, editorName, now, editorAvatar)
-  const reviews = await listDraftReviews(db, draftId)
+  const reviews = row.locked_at ? await listDraftReviews(db, draftId) : []
   const lastId = events.at(-1)?.id
   return {
     after: lastId ?? (Number.isSafeInteger(after) && after > 0 ? after : 0),
     events,
-    series: draft.series,
-    characters: draft.characters,
+    series,
+    characters,
     presence,
     reviews,
-    lockedAt: draft.lockedAt,
-    lockedBy: draft.lockedBy,
-    hiddenAt: draft.hiddenAt,
-    description: draft.description
+    lockedAt: row.locked_at,
+    lockedBy: row.locked_by,
+    hiddenAt: row.hidden_at ?? null,
+    description: row.description ?? ''
   }
 }
 

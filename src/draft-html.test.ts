@@ -207,7 +207,7 @@ describe('draft HTML', () => {
     expect(page).not.toContain('id="draft-config-open"')
   })
 
-  it('shows Unhide to lock ids on a hidden draft', () => {
+  it('shows Unhide to admin ids on a hidden draft', () => {
     const draft: DraftRecord = {
       id: 2,
       createdAt: 1,
