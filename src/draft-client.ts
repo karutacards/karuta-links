@@ -347,20 +347,40 @@ function reviewKey(list) {
     return String(item.discordId || '') + '\\0' + String(item.decision || '');
   }).sort().join('\\n');
 }
-function reviewIcon(kind) {
-  var ns = 'http://www.w3.org/2000/svg';
-  var svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('aria-hidden', 'true');
-  var path = document.createElementNS(ns, 'path');
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', 'currentColor');
-  path.setAttribute('stroke-width', '1.75');
-  path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
-  path.setAttribute('d', kind === 'approve' ? 'M3 8.5 6.5 12 13 4.5' : 'M4 4l8 8M12 4l-8 8');
-  svg.appendChild(path);
-  return svg;
+function reviewVoterName(name) {
+  var raw = String(name || '').trim();
+  return raw.charAt(0) === '@' ? raw.slice(1) : raw;
+}
+function fillReviewCount(id, decision, list) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var names = [];
+  (list || []).forEach(function (item) {
+    if (item.decision !== decision) return;
+    var voter = reviewVoterName(item.username);
+    if (voter) names.push(voter);
+  });
+  var tip = document.createElement('span');
+  tip.className = 'review-tip';
+  var empty = decision === 'approve' ? 'No approve votes.' : 'No reject votes.';
+  el.replaceChildren(document.createTextNode(String(names.length)), tip);
+  if (!names.length) {
+    el.removeAttribute('title');
+    el.setAttribute('aria-label', empty);
+    tip.hidden = true;
+    return;
+  }
+  var joined = names.join(', ');
+  var unit = names.length === 1
+    ? (decision === 'approve' ? ' approve vote. ' : ' reject vote. ')
+    : (decision === 'approve' ? ' approve votes. ' : ' reject votes. ');
+  el.setAttribute('aria-label', names.length + unit + joined + '.');
+  tip.textContent = joined;
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    el.title = joined;
+  } else {
+    el.removeAttribute('title');
+  }
 }
 function entityRow(entity, locked, series) {
   var wrap = document.createElement('tr');
@@ -375,7 +395,7 @@ function entityRow(entity, locked, series) {
     : '<button type="button" class="is-idle" disabled tabindex="-1" aria-hidden="true">History</button>';
   var live = entity.importAction === 'update';
   var liveTag = live
-    ? '<span class="import-tag" title="Imported as an update. The name cannot be edited or deleted.">Update</span>'
+    ? '<span class="import-tag" title="This name already exists in Karuta. It cannot be edited or deleted.">Existing</span>'
     : '';
   var nameCell = locked
     ? '<td class="name" data-label="Name"><div class="name-row"></div></td>'
@@ -406,8 +426,8 @@ function entityRow(entity, locked, series) {
     if (live && nameBox) {
       var tag = document.createElement('span');
       tag.className = 'import-tag';
-      tag.title = 'Imported as an update. The name cannot be edited or deleted.';
-      tag.textContent = 'Update';
+      tag.title = 'This name already exists in Karuta. It cannot be edited or deleted.';
+      tag.textContent = 'Existing';
       nameBox.append(tag);
     }
     var seriesCellEl = wrap.querySelector('.series');
@@ -780,24 +800,8 @@ window.krtaDraftEditor = function () {
     var mine = ownReview();
     if (approveBtn) approveBtn.classList.toggle('is-on', mine === 'approve');
     if (rejectBtn) rejectBtn.classList.toggle('is-on', mine === 'reject');
-    var root = document.getElementById('draft-review-votes');
-    if (!root) return;
-    root.replaceChildren();
-    state.reviews.forEach(function (item) {
-      var chip = document.createElement('span');
-      chip.className = 'review-vote';
-      var voteLabel = item.decision === 'approve'
-        ? discordHandle(item.username) + ' approved.'
-        : discordHandle(item.username) + ' rejected.';
-      chip.setAttribute('aria-label', voteLabel);
-      chip.title = voteLabel;
-      chip.append(mentionNode(item.username));
-      var flag = document.createElement('span');
-      flag.className = 'review-flag is-' + item.decision;
-      flag.append(reviewIcon(item.decision));
-      chip.append(flag);
-      root.append(chip);
-    });
+    fillReviewCount('review-approve-count', 'approve', state.reviews);
+    fillReviewCount('review-reject-count', 'reject', state.reviews);
   }
   async function submitReview(next) {
     if (!state.locked || reviewBusy) return;

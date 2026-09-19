@@ -117,13 +117,8 @@ function layout(title: string, body: string, script = ''): string {
       flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
-      gap: 0.4rem 0.65rem;
-      width: 100%;
+      gap: 0.35rem 0.55rem;
       margin: 0.35rem 0 0;
-    }
-    .review-votes {
-      flex: 1 1 100%;
-      justify-content: flex-end;
     }
     .review-prompt {
       margin: 0;
@@ -136,8 +131,15 @@ function layout(title: string, body: string, script = ''): string {
     }
     .review-actions {
       display: flex;
+      align-items: flex-start;
+      gap: 0.35rem;
+    }
+    .review-choice {
+      display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 0.3rem;
+      gap: 0.15rem;
+      min-width: 2rem;
     }
     .review-mark {
       display: inline-flex;
@@ -162,32 +164,40 @@ function layout(title: string, body: string, script = ''): string {
       color: var(--danger);
       border-color: var(--danger);
     }
-    .review-votes {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.3rem;
-    }
-    .review-vote {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      min-width: 0;
-    }
-    .review-vote .mention {
-      max-width: 6.5rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .review-flag {
-      width: 0.85rem;
-      height: 0.85rem;
+    .review-count {
+      position: relative;
       color: var(--muted);
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      min-height: 1rem;
+      cursor: default;
     }
-    .review-flag.is-approve { color: var(--ok); }
-    .review-flag.is-reject { color: var(--danger); }
-    .review-flag svg { display: block; width: 100%; height: 100%; }
+    .review-tip {
+      position: absolute;
+      top: calc(100% + 0.2rem);
+      right: 0;
+      z-index: 4;
+      display: none;
+      box-sizing: border-box;
+      min-width: max-content;
+      max-width: min(14rem, calc(100vw - 2rem));
+      padding: 0.25rem 0.4rem;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      font-size: 0.75rem;
+      line-height: 1.3;
+      text-align: right;
+      white-space: normal;
+    }
+    .review-tip[hidden] { display: none; }
+    @media (hover: hover) and (pointer: fine) {
+      .review-count:hover .review-tip:not([hidden]),
+      .review-count:focus-visible .review-tip:not([hidden]) {
+        display: block;
+      }
+    }
     .workspace {
       display: grid;
       grid-template-areas:
@@ -586,7 +596,6 @@ function layout(title: string, body: string, script = ''): string {
         overflow-x: auto;
       }
       .row .acts-row { justify-content: start; }
-      .review-vote .mention { display: none; }
     }
     @media (min-width: 64rem) {
       .name { width: 16rem; }
@@ -842,14 +851,13 @@ export function renderDraftEditor(
          ${locked ? `<div id="draft-review" class="review">
            <p class="review-prompt" title="Ready to publish?">Ready to publish?</p>
            <div class="review-actions">
-             <button type="button" id="review-approve" class="review-mark" data-review="approve" aria-label="Approve" title="Approve">
+             <div class="review-choice"><button type="button" id="review-approve" class="review-mark" data-review="approve" aria-label="Approve" title="Approve">
                <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M3 8.5 6.5 12 13 4.5"/></svg>
-             </button>
-             <button type="button" id="review-reject" class="review-mark" data-review="reject" aria-label="Reject" title="Reject">
+             </button><span id="review-approve-count" class="review-count" tabindex="0" aria-label="No approve votes.">0</span></div>
+             <div class="review-choice"><button type="button" id="review-reject" class="review-mark" data-review="reject" aria-label="Reject" title="Reject">
                <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" d="M4 4l8 8M12 4l-8 8"/></svg>
-             </button>
+             </button><span id="review-reject-count" class="review-count" tabindex="0" aria-label="No reject votes.">0</span></div>
            </div>
-           <div id="draft-review-votes" class="review-votes" aria-label="Publish reviews"></div>
          </div>` : ''}
        </div>
      </div>
