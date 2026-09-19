@@ -18,6 +18,18 @@ export function actorName(username: string): string {
   return raw.charAt(0) === '@' ? raw.slice(1) : raw
 }
 
+export function restoreTargetId(raw: string | null): number | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    const eventId = Number((parsed as Record<string, unknown>).eventId)
+    return Number.isSafeInteger(eventId) && eventId > 0 ? eventId : null
+  } catch {
+    return null
+  }
+}
+
 function parseDescription(raw: string | null): string {
   if (!raw) return ''
   try {
@@ -153,6 +165,11 @@ export function draftAuditSpans(
     if (!before && after) return [text(' set the draft description.')]
     if (before && !after) return [text(' cleared the draft description.')]
     return [text(' updated the draft description.')]
+  }
+  if (entry.action === 'restore') {
+    const target = restoreTargetId(entry.afterJson) ?? restoreTargetId(entry.beforeJson)
+    if (target) return [text(` restored this draft to #${target}.`)]
+    return [text(' restored this draft to an earlier save.')]
   }
   const before = parsePayload(entry.beforeJson)
   const after = parsePayload(entry.afterJson)

@@ -114,6 +114,15 @@ function layout(title: string, body: string, script = ''): string {
     .catalog { grid-area: catalog; min-width: 0; }
     .activity {
       grid-area: activity;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      overflow: visible;
+      font-size: 0.75rem;
+      line-height: 1.35;
+    }
+    .activity-panel {
       display: flex;
       flex-direction: column;
       min-height: 8rem;
@@ -122,8 +131,6 @@ function layout(title: string, body: string, script = ''): string {
       border: 1px solid var(--line);
       background: var(--panel);
       padding: 0.65rem 0.75rem;
-      font-size: 0.75rem;
-      line-height: 1.35;
     }
     .activity h2 {
       flex: none;
@@ -143,20 +150,82 @@ function layout(title: string, body: string, script = ''): string {
       color: var(--ink);
       overflow-wrap: anywhere;
     }
-    .activity .when {
-      display: block;
+    .activity .stamp {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.35rem;
       margin: 0 0 0.12rem;
+    }
+    .activity .when {
       color: var(--muted);
       font-size: 0.625rem;
       line-height: 1.2;
       font-weight: 400;
     }
+    .activity .save-id,
+    .history-log .save-id {
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.625rem;
+      line-height: 1.2;
+      font-weight: 600;
+      padding: 0.04rem 0.28rem;
+      border: 1px solid var(--line);
+      border-radius: 0.2rem;
+      background: #0e1016;
+    }
+    .activity li.superseded,
+    .history-log li.superseded { opacity: 0.45; }
     .activity p { margin: 0; }
     .activity .actor {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.72rem;
     }
     .activity strong { font-weight: 700; }
+    .activity li.has-restore {
+      display: grid;
+      grid-template-columns: 0.85rem minmax(0, 1fr);
+      column-gap: 0.35rem;
+    }
+    .activity li.has-restore > .stamp { grid-column: 2; }
+    .activity li.has-restore > p { grid-column: 1 / -1; }
+    .activity li.activity-group {
+      margin: 0 0 0.7rem;
+      padding: 0.2rem 0 0.15rem 0.55rem;
+      border-left: 2px solid var(--line);
+    }
+    .activity li.activity-group.save { border-left-color: var(--accent); }
+    .activity li.activity-group.import { border-left-color: var(--muted); }
+    .activity li.activity-group.has-restore { display: block; }
+    .activity .activity-group-events {
+      list-style: none;
+      margin: 0.2rem 0 0;
+      padding: 0;
+    }
+    .activity .activity-group-events > li { margin: 0 0 0.35rem; }
+    .activity .restore {
+      grid-column: 1;
+      grid-row: 1;
+      align-self: center;
+      box-sizing: border-box;
+      width: 0.85rem;
+      height: 0.85rem;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+    }
+    .activity .restore:hover,
+    .activity .restore:focus-visible { color: var(--ink); }
+    .activity .restore svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
     @media (min-width: 64rem) {
       .workspace {
         grid-template-columns: minmax(0, 1fr) 18rem;
@@ -164,10 +233,22 @@ function layout(title: string, body: string, script = ''): string {
         align-items: stretch;
       }
       .activity {
+        align-self: stretch;
+        height: 0;
+        min-height: 100%;
+      }
+      .activity-panel {
         position: sticky;
         top: 0.75rem;
-        align-self: stretch;
         min-height: 0;
+        max-height: min(100%, calc(100dvh - 2.25rem));
+      }
+      .workspace.activity-fill .activity {
+        height: auto;
+        min-height: 0;
+        align-self: start;
+      }
+      .workspace.activity-fill .activity-panel {
         max-height: calc(100dvh - 2.25rem);
       }
     }
@@ -175,7 +256,7 @@ function layout(title: string, body: string, script = ''): string {
       th.edited, td.edited { display: none; }
     }
     @media (max-height: 36rem) {
-      .activity { max-height: min(10rem, 32dvh); }
+      .activity-panel { max-height: min(10rem, 32dvh); }
     }
     @media (pointer: coarse) {
       button, .file, input { min-height: 2.75rem; }
@@ -288,19 +369,19 @@ function layout(title: string, body: string, script = ''): string {
     .acts {
       position: relative;
       z-index: 1;
-      width: 8.5rem;
-      white-space: normal;
+      width: 16.5rem;
+      white-space: nowrap;
     }
     .acts-row {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: flex-end;
       gap: 0.25rem;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
     .acts-edit {
       display: inline-flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: flex-end;
       align-items: center;
       gap: 0.25rem;
@@ -309,14 +390,17 @@ function layout(title: string, body: string, script = ''): string {
     @media (max-width: 39.99rem) {
       .name { width: 28%; }
       .series { width: 22%; }
-      .acts { width: 26%; }
+      .acts {
+        width: auto;
+        white-space: normal;
+      }
+      .acts-row, .acts-edit { flex-wrap: wrap; }
     }
     @media (min-width: 64rem) {
       .name { width: 16rem; }
       .series { width: 12rem; }
       .edited { width: 11rem; max-width: 11rem; }
-      .acts { width: 13rem; white-space: nowrap; }
-      .acts-row, .acts-edit { flex-wrap: nowrap; }
+      .acts { width: 16.5rem; }
     }
     .aliases {
       display: flex;
@@ -452,7 +536,11 @@ function layout(title: string, body: string, script = ''): string {
       font-size: 0.72rem;
     }
     .history-log strong { font-weight: 700; }
-    .acts button { margin: 0; }
+    .acts button {
+      margin: 0;
+      flex: none;
+      white-space: nowrap;
+    }
     @media (prefers-reduced-motion: reduce) {
       * { transition: none !important; }
     }
@@ -515,7 +603,7 @@ export function renderDraftEditor(
          <td><input id="add-series-name" aria-label="Name" autocomplete="off"></td>
          <td>${aliasCell('add-series-aliases')}</td>
          <td></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-series">Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-series" disabled>Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
        </tr>`
   const addCharacter = locked
     ? ''
@@ -524,7 +612,7 @@ export function renderDraftEditor(
          <td><input id="add-character-series" aria-label="Series" autocomplete="off"></td>
          <td>${aliasCell('add-character-aliases')}</td>
          <td></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-character">Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-character" disabled>Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
        </tr>`
   return layout(
     `Draft ${draft.id}`,
@@ -579,8 +667,10 @@ export function renderDraftEditor(
          </div>
        </div>
        <aside class="activity" aria-label="Activity">
-         <h2>Activity</h2>
-         <ol id="draft-activity"></ol>
+         <div class="activity-panel">
+           <h2>Activity</h2>
+           <ol id="draft-activity"${options.canLock && !locked ? ' data-restore="1"' : ''}></ol>
+         </div>
        </aside>
      </div>
      <dialog id="draft-history" class="history-dialog" aria-labelledby="draft-history-kind draft-history-title">
