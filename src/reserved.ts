@@ -7,6 +7,7 @@ export const RESERVED_SEGMENTS = [
   'favicon.ico',
   'health',
   'images',
+  'report',
   'robots.txt',
   'static'
 ] as const

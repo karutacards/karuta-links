@@ -25,6 +25,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/contests/{id}` | Canonical contest dump. `{id}` is the Card Hunt eventCounter |
 | `/drafts/import` | OAuth-gated importer handshake. Accepts a catalog via `postMessage` |
 | `/drafts/{id}` | OAuth-gated collaborative draft editor |
+| `/report` | OAuth-gated cheat-report form (`GET` and `POST`) |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
 | `/api/v1/drafts` | Create a draft from a text catalog (`POST` only) |
@@ -37,7 +38,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/api/v1/drafts/{id}/unlock` | Unlock a draft (`POST`, admin list only) |
 | `/api/v1/drafts/{id}/restore` | Restore a draft to an Activity save (`POST`, admin list only) |
 | `/api/v1/drafts/{id}/export.txt` | KarutaImporter TXT for a locked draft (admin list only) |
-| `/api/auth/discord` | Start Discord identify. Optional `next` is `/drafts/import` or `/drafts/{id}` |
+| `/api/auth/discord` | Start Discord identify. Optional `next` is `/drafts/import`, `/drafts/{id}` or `/report` |
 | `/api/auth/callback` | Exchange the authorization code and set a session cookie |
 | `/api/auth/me` | Session probe. `{ authenticated: false }` or `{ authenticated: true, discordId, username }` |
 | `/api/auth/logout` | Clear the session cookie (`POST` only) |
@@ -45,7 +46,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/health` | Plain `ok` |
 | `/robots.txt` | Allow all |
 
-Reserved first segments: `api`, `assets`, `content`, `contests`, `drafts`, `favicon.ico`, `health`, `images`, `robots.txt`, `static`. Those names never become slugs.
+Reserved first segments: `api`, `assets`, `content`, `contests`, `drafts`, `favicon.ico`, `health`, `images`, `report`, `robots.txt`, `static`. Those names never become slugs.
 
 Slugs are exactly six characters in `[a-z0-9]`. They point only at internal `/{section}/{id}` paths. There are no open redirects.
 
@@ -114,7 +115,7 @@ Contest dumps are not ingested over HTTP.
 
 Pages are public. Content-dump writes require the ingest token. A hard production publish from karuta-admin POSTs a dump. Soft and silent publishes skip that POST.
 
-Discord OAuth can issue a signed session cookie (`identify` only). The cookie includes a generation. Raising that number invalidates every outstanding session. It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes require a session. A missing cookie starts OAuth and returns to `/drafts/import` or `/drafts/{id}`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
+Discord OAuth can issue a signed session cookie (`identify` only). The cookie includes a generation. Raising that number invalidates every outstanding session. It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes and `/report` require a session. A missing cookie starts OAuth and returns to `/drafts/import`, `/drafts/{id}` or `/report`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
 
 ## Collaborative drafts
 
@@ -148,6 +149,22 @@ Draft HTML is a standalone dark editor. It does not use dump page chrome, a home
 
 The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 
+## Player reports
+
+`/report` is an unadvertised form for cheat reports. It uses a Karuta-branded night surface of its own (official purple gradient and periwinkle). It does not use dump page Georgia or the draft editor.
+
+A missing session starts OAuth and returns to `/report`. Opening or posting the form then:
+
+1. Rejects Discord IDs in `report_bans` with `403` and a sentence that they cannot use the form.
+2. Re-checks the Karuta user blacklist.
+3. Requires credentials mode even when `drafts.config.json` `access` is `open` or `whitelist`. The bars are the same `credentials` object (default: 1,000 drops, 1,000 grabs or one `k!gems` purchase). Failed access is `403` with a complete sentence that does not name the failed bar. `adminIds` may skip the bars after the ban and blacklist checks. Form-bans apply to everyone, including admins.
+
+A missing or malformed blacklist, a missing Firestore config, or a failed `report_bans` read fails closed with `503`.
+
+The form is one page. It groups the work as why, who or where, optional evidence, then a signed acknowledgment. Reason is required: alting, botting, scamming or gambling. User, server and channel IDs sit together because at least one of those IDs is required. IDs are Discord snowflakes of 17–19 digits, separated by whitespace or commas, at most 20 per field. Card codes, dye codes, Idol codes and notes are optional. Codes use the same separators and cap at 20 per field. A card code is 3–8 letters or numbers. A dye code starts with a dollar sign and then 2–8 letters or numbers. An Idol code starts with an ampersand and then 2–8 letters or numbers. Those shapes match the Karuta bot. Stored codes are lowercase. Notes cap at 2,000 characters. Submit requires acknowledging that a false report is a permanent ban from the form, the support server and future resources.
+
+`GET /report` renders the form. `POST /report` validates the same rules, stores one `reports` row in D1 and returns a thank-you page. A validation error re-renders the form with one complete-sentence error. A reporter may submit three reports in 24 hours. A fourth is `429`. Staff add or remove `report_bans` rows with D1 SQL. There is no staff inbox and no webhook.
+
 ## Non-goals
 
 - Discord embed short URL
@@ -157,3 +174,6 @@ The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 - A public hostname on `karuta-images` (`img.krta.cc` is out)
 - A bot POST for contest dumps
 - Soft or silent dumps
+- A staff report inbox
+- A report Discord webhook
+- A home-page link to `/report`

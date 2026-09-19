@@ -16,7 +16,9 @@ describe('session', () => {
   it('accepts only draft return paths', () => {
     expect(safeDraftNext('/drafts/import')).toBe('/drafts/import')
     expect(safeDraftNext('/drafts/12')).toBe('/drafts/12')
+    expect(safeDraftNext('/report')).toBe('/report')
     expect(safeDraftNext('/drafts/01')).toBeNull()
+    expect(safeDraftNext('/report/1')).toBeNull()
     expect(safeDraftNext('/')).toBeNull()
     expect(safeDraftNext('https://evil.example/')).toBeNull()
   })

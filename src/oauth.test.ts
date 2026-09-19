@@ -204,6 +204,35 @@ describe('oauth', () => {
     expect(callback.headers.get('Location')).toBe('/drafts/import')
   })
 
+  it('returns to /report after identify when oauth_next is set', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: '135694375647838208', username: 'tester' }), {
+          status: 200
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const start = await app.request(
+      'http://127.0.0.1:8787/api/auth/discord?next=/report',
+      {},
+      testEnv()
+    )
+    const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
+    const next = firstCookie(start, NEXT_COOKIE)
+    const allowed = await envWithBlacklist([])
+    const callback = await app.request(
+      `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
+      { headers: { Cookie: `${firstCookie(start, STATE_COOKIE) ?? ''}; ${next ?? ''}` } },
+      allowed
+    )
+    expect(callback.status).toBe(302)
+    expect(callback.headers.get('Location')).toBe('/report')
+  })
+
   it('refuses a blacklisted Discord user before creating a session', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(

@@ -137,6 +137,7 @@ export type Route =
   | { type: 'ingest' }
   | { type: 'contestHome' }
   | { type: 'draftImport' }
+  | { type: 'report' }
   | { type: 'draft'; id: number }
   | { type: 'document'; section: string; id: number }
   | { type: 'slug'; slug: string }
