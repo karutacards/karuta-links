@@ -802,6 +802,7 @@ window.krtaDraftEditor = function () {
       sessionStorage.removeItem(lockNoticeKey());
     } catch (e) { kind = ''; }
     if (kind === 'locked') showStatus(status, 'This draft was locked.', false);
+    if (kind === 'unlocked') showStatus(status, 'This draft was unlocked.', false);
   }
   async function saveAll() {
     if (saveAllBusy || state.locked) return;
@@ -1154,6 +1155,7 @@ window.krtaDraftEditor = function () {
       var body = result.body;
       if (Boolean(body.lockedAt) !== Boolean(state.locked)) {
         if (body.lockedAt && !state.locked) rememberLockNotice('locked');
+        else if (!body.lockedAt && state.locked) rememberLockNotice('unlocked');
         window.location.reload();
         return;
       }
