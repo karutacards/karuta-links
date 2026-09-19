@@ -1016,11 +1016,6 @@ window.krtaDraftEditor = function () {
       cascadeCount = state.characters.filter(function (item) {
         return item.seriesKey === mutation.key;
       }).length;
-      if (!silent && cascadeCount) {
-        showStatus(status, cascadeCount === 1
-          ? 'Saving will delete this series and 1 character.'
-          : 'Saving will delete this series and ' + cascadeCount + ' characters.', false);
-      }
     }
     var payload = Object.assign({}, mutation);
     if (options && options.saveId != null) payload.saveId = options.saveId;
@@ -1160,22 +1155,6 @@ window.krtaDraftEditor = function () {
       }
       return rowReadyToSave(item.edit);
     });
-    var cascadeDeletes = pending.filter(function (item) {
-      return item.edit.type === 'series' && item.edit.pendingDelete;
-    });
-    if (cascadeDeletes.length) {
-      var cascadeCount = 0;
-      cascadeDeletes.forEach(function (item) {
-        cascadeCount += state.characters.filter(function (entity) {
-          return entity.seriesKey === item.edit.key;
-        }).length;
-      });
-      if (cascadeCount) {
-        showStatus(status, cascadeCount === 1
-          ? 'Saving will delete this series and 1 character.'
-          : 'Saving will delete this series and ' + cascadeCount + ' characters.', false);
-      }
-    }
     var failed = [];
     var rebased = [];
     var saved = 0;
@@ -1423,6 +1402,22 @@ window.krtaDraftEditor = function () {
         delete row.dataset.userRemoved;
         row.classList.remove('removed');
       } else {
+        if (row.dataset.type === 'series') {
+          var doomed = findEntity('series', key);
+          var nameField = row.querySelector('[data-field="name"]');
+          var seriesName = nameField && nameField.value.trim()
+            ? nameField.value.trim()
+            : (doomed ? doomed.name : 'this series');
+          var assigned = state.characters.filter(function (item) {
+            return item.seriesKey === key;
+          }).length;
+          if (assigned) {
+            var question = assigned === 1
+              ? 'Delete ' + seriesName + ' and the 1 character on this series?'
+              : 'Delete ' + seriesName + ' and the ' + assigned + ' characters on this series?';
+            if (!window.confirm(question)) return;
+          }
+        }
         row.dataset.userRemoved = '1';
         row.classList.add('removed');
       }

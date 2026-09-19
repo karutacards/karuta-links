@@ -95,6 +95,8 @@ describe('draft HTML', () => {
     expect(page).toContain('var FONT_CODE_POINTS')
     expect(page).toContain('function keepDraftFontText')
     expect(page).toContain('Karuta font cannot display.')
+    expect(page).toContain('window.confirm(question)')
+    expect(page).toContain('characters on this series?')
     expect(page).toContain('(hover: hover)')
     expect(page).toContain('alias-label')
     expect(page).toContain('button.is-idle')
