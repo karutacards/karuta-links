@@ -37,6 +37,8 @@ export type DraftSeries = {
   revision: number
   lastEditorId: string | null
   lastEditorName: string | null
+  addedAt?: number
+  lastEditedAt?: number
 }
 
 export type DraftCharacter = {
@@ -50,6 +52,8 @@ export type DraftCharacter = {
   revision: number
   lastEditorId: string | null
   lastEditorName: string | null
+  addedAt?: number
+  lastEditedAt?: number
 }
 
 export type DraftEntity = DraftSeries | DraftCharacter

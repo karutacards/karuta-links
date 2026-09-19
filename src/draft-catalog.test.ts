@@ -78,6 +78,17 @@ describe('draft catalog', () => {
     })).toThrow('That character is already on this series.')
   })
 
+  it('rejects names and aliases over 200 characters', () => {
+    const longName = 'A'.repeat(201)
+    const longAlias = 'B'.repeat(201)
+    expect(() => parseDraftCatalog({
+      series: [{ name: longName }]
+    })).toThrow('Name is too long.')
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Naruto', aliases: [longAlias] }]
+    })).toThrow('An alias is too long.')
+  })
+
   it('rejects a character whose series is not on the draft', () => {
     expect(() => parseDraftCatalog({
       characters: [{ name: 'Hero', seriesKey: 'Jujutsu Kaisen' }]

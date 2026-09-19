@@ -12,7 +12,7 @@ function embedJson(value: unknown): string {
 
 function aliasCell(id: string): string {
   return `<div class="aliases" id="${id}">
-            <input data-alias-input aria-label="Add alias" autocomplete="off">
+            <input data-alias-input aria-label="Add alias" autocomplete="off" maxlength="200">
             <ul class="alias-list" data-alias-list></ul>
           </div>`
 }
@@ -264,7 +264,36 @@ function layout(title: string, body: string, script = ''): string {
     .lede .meta { margin: 0; }
     h1 { font-size: 1.15rem; margin: 0; }
     h2 { font-size: 0.95rem; margin: 1.15rem 0 0.4rem; }
-    .catalog > h2:first-child { margin-top: 0; }
+    .catalog-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.35rem 0.75rem;
+      margin: 1.15rem 0 0.4rem;
+    }
+    .catalog-head h2 { margin: 0; }
+    .catalog > .catalog-head:first-child { margin-top: 0; }
+    .sort-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+    .sort-label select {
+      color: var(--ink);
+      background: #0e1016;
+      border: 1px solid var(--line);
+      border-radius: 0.25rem;
+      font: inherit;
+      font-size: 0.8rem;
+      letter-spacing: 0;
+      font-weight: 500;
+      padding: 0.15rem 0.35rem;
+    }
     p { margin: 0 0 0.6rem; }
     .meta, .copy, .empty { color: var(--muted); }
     .banner[hidden] { display: none; }
@@ -405,13 +434,21 @@ function layout(title: string, body: string, script = ''): string {
       gap: 0.25rem;
       flex-wrap: nowrap;
     }
+    .row .acts-row {
+      display: grid;
+      grid-template-columns: max-content max-content max-content max-content;
+      justify-content: end;
+    }
     .acts-edit {
-      display: inline-flex;
-      flex-wrap: nowrap;
-      justify-content: flex-end;
-      align-items: center;
-      gap: 0.25rem;
-      margin-left: auto;
+      display: contents;
+    }
+    .row .acts-row button.is-idle {
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .add-row .acts-row button.is-idle {
+      visibility: hidden;
+      pointer-events: none;
     }
     @media (max-width: 39.99rem) {
       .wrap { overflow: visible; }
@@ -454,11 +491,12 @@ function layout(title: string, body: string, script = ''): string {
         width: auto;
         white-space: nowrap;
       }
-      .acts-row, .acts-edit {
+      .acts-row {
         flex-wrap: nowrap;
         justify-content: flex-start;
         overflow-x: auto;
       }
+      .row .acts-row { justify-content: start; }
     }
     @media (min-width: 64rem) {
       .name { width: 16rem; }
@@ -488,6 +526,8 @@ function layout(title: string, body: string, script = ''): string {
       display: inline-flex;
       align-items: center;
       gap: 0.2rem;
+      max-width: min(18rem, 100%);
+      min-width: 0;
       min-height: 1.5rem;
       padding: 0 0.4rem;
       border: 1px solid var(--line);
@@ -497,10 +537,18 @@ function layout(title: string, body: string, script = ''): string {
       font: inherit;
       cursor: pointer;
     }
-    .alias-chip .alias-x { color: var(--muted); }
-    .alias-chip:hover, .alias-chip:hover .alias-x {
-      border-color: var(--danger);
-      color: var(--danger);
+    .alias-chip .alias-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .alias-chip .alias-x { color: var(--muted); flex: none; }
+    @media (hover: hover) and (pointer: fine) {
+      .alias-chip:hover, .alias-chip:hover .alias-x {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
     }
     .alias-chip.removed,
     .alias-chip.removed:hover,
@@ -664,19 +712,19 @@ export function renderDraftEditor(
   const addSeries = locked
     ? ''
     : `<tr class="add-row" id="add-series-card">
-         <td class="name" data-label="Name"><input id="add-series-name" aria-label="Name" autocomplete="off"></td>
+         <td class="name" data-label="Name"><input id="add-series-name" aria-label="Name" autocomplete="off" maxlength="200"></td>
          <td class="aliases-cell" data-label="Aliases">${aliasCell('add-series-aliases')}</td>
          <td class="edited"></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-series" disabled>Add series</button><button type="button" id="discard-series" disabled>Discard</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-series" disabled>Add series</button><button type="button" id="discard-series" class="is-idle" disabled>Discard</button></div></td>
        </tr>`
   const addCharacter = locked
     ? ''
     : `<tr class="add-row" id="add-character-card">
-         <td class="name" data-label="Name"><input id="add-character-name" aria-label="Name" autocomplete="off"></td>
-         <td class="series" data-label="Series"><input id="add-character-series" aria-label="Series" autocomplete="off"></td>
+         <td class="name" data-label="Name"><input id="add-character-name" aria-label="Name" autocomplete="off" maxlength="200"></td>
+         <td class="series" data-label="Series"><input id="add-character-series" aria-label="Series" autocomplete="off" maxlength="200"></td>
          <td class="aliases-cell" data-label="Aliases">${aliasCell('add-character-aliases')}</td>
          <td class="edited"></td>
-         <td class="acts"><div class="acts-row"><button type="button" id="add-character" disabled>Add character</button><button type="button" id="discard-character" disabled>Discard</button></div></td>
+         <td class="acts"><div class="acts-row"><button type="button" id="add-character" disabled>Add character</button><button type="button" id="discard-character" class="is-idle" disabled>Discard</button></div></td>
        </tr>`
   return layout(
     `Draft ${draft.id}`,
@@ -700,7 +748,16 @@ export function renderDraftEditor(
      <p id="draft-status" class="banner" role="status" hidden></p>
      <div class="workspace">
        <div class="catalog">
-         <h2>Series</h2>
+         <div class="catalog-head">
+           <h2>Series</h2>
+           <label class="sort-label">Sort
+             <select id="series-sort" aria-label="Sort series">
+               <option value="added">Newest added</option>
+               <option value="edited">Last edited</option>
+               <option value="name">Name</option>
+             </select>
+           </label>
+         </div>
          <div class="wrap">
            <table>
              <thead>
@@ -714,7 +771,16 @@ export function renderDraftEditor(
              <tbody id="series-list">${addSeries}</tbody>
            </table>
          </div>
-         <h2>Characters</h2>
+         <div class="catalog-head">
+           <h2>Characters</h2>
+           <label class="sort-label">Sort
+             <select id="character-sort" aria-label="Sort characters">
+               <option value="added">Newest added</option>
+               <option value="edited">Last edited</option>
+               <option value="name">Name</option>
+             </select>
+           </label>
+         </div>
          <div class="wrap">
            <table>
              <thead>

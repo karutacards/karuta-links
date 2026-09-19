@@ -2,6 +2,8 @@ import { rebaseDraftPending } from './draft-rebase'
 import { groupDraftActivity, lastEventIdForSave, liveActivityIds } from './draft-restore'
 
 export const DRAFT_CLIENT_SCRIPT = 'var rebaseDraftPending = ' + rebaseDraftPending.toString() + ';\nvar lastEventIdForSave = ' + lastEventIdForSave.toString() + ';\nvar groupDraftActivity = ' + groupDraftActivity.toString() + ';\nvar liveActivityIds = ' + liveActivityIds.toString() + ';\n' + `
+var MAX_NAME = 200;
+var MAX_ALIAS = 200;
 function showStatus(el, message, isError) {
   if (!el) return;
   el.hidden = !message;
@@ -34,7 +36,7 @@ function seriesHintText() {
 }
 function aliasEditorHtml() {
   return '<div class="aliases">' +
-    '<input data-alias-input aria-label="Add alias" autocomplete="off">' +
+    '<input data-alias-input aria-label="Add alias" autocomplete="off" maxlength="200">' +
     '<ul class="alias-list" data-alias-list></ul>' +
   '</div>';
 }
@@ -70,6 +72,7 @@ function restoreAliasChip(node) {
   chip.classList.remove('removed');
   chip.removeAttribute('data-alias-removed');
   chip.setAttribute('aria-label', 'Remove alias ' + (chip.getAttribute('data-alias') || ''));
+  if (document.activeElement === chip) chip.blur();
 }
 function markAliasRemoved(chip) {
   var item = chip.closest('li');
@@ -81,6 +84,10 @@ function markAliasRemoved(chip) {
 function addAliasChip(list, raw, status, removable) {
   var alias = String(raw || '').trim();
   if (!alias) return false;
+  if (alias.length > MAX_ALIAS) {
+    showStatus(status, 'An alias is too long.', true);
+    return false;
+  }
   if (alias.indexOf('|') !== -1) {
     showStatus(status, 'An alias cannot contain |.', true);
     return false;
@@ -102,7 +109,11 @@ function addAliasChip(list, raw, status, removable) {
   if (removable === false) {
     item.className = 'alias-chip';
     item.setAttribute('data-alias', alias);
-    item.textContent = alias;
+    item.title = alias;
+    var frozen = document.createElement('span');
+    frozen.className = 'alias-label';
+    frozen.textContent = alias;
+    item.append(frozen);
     list.append(item);
     return true;
   }
@@ -112,7 +123,9 @@ function addAliasChip(list, raw, status, removable) {
   chip.setAttribute('data-alias', alias);
   chip.setAttribute('data-alias-remove', '1');
   chip.setAttribute('aria-label', 'Remove alias ' + alias);
+  chip.title = alias;
   var text = document.createElement('span');
+  text.className = 'alias-label';
   text.textContent = alias;
   var mark = document.createElement('span');
   mark.className = 'alias-x';
@@ -295,28 +308,28 @@ function entityRow(entity, locked, series) {
   if (entity.type === 'character') wrap.dataset.seriesKey = entity.seriesKey || '';
   var historyBtn = entity.lastEditorName
     ? '<button type="button" data-audit="1" aria-haspopup="dialog">History</button>'
-    : '';
+    : '<button type="button" class="is-idle" disabled tabindex="-1" aria-hidden="true">History</button>';
   var live = entity.importAction === 'update';
   var liveTag = live
     ? '<span class="import-tag" title="Imported as an update. The name cannot be edited or deleted.">Update</span>'
     : '';
   var nameCell = locked
     ? '<td class="name" data-label="Name"><div class="name-row"></div></td>'
-    : '<td class="name" data-label="Name"><div class="name-row"><input data-field="name" aria-label="Name" autocomplete="off">' + liveTag + '</div></td>';
+    : '<td class="name" data-label="Name"><div class="name-row"><input data-field="name" aria-label="Name" autocomplete="off" maxlength="200">' + liveTag + '</div></td>';
   var seriesCell = entity.type === 'character'
     ? (locked
       ? '<td class="series" data-label="Series"></td>'
-      : '<td class="series" data-label="Series"><input data-field="seriesKey" aria-label="Series" autocomplete="off"></td>')
+      : '<td class="series" data-label="Series"><input data-field="seriesKey" aria-label="Series" autocomplete="off" maxlength="200"></td>')
     : '';
   var aliasCell = locked
     ? '<td class="aliases-cell" data-label="Aliases"><div class="aliases"><ul class="alias-list" data-alias-list></ul></div></td>'
     : '<td class="aliases-cell" data-label="Aliases">' + aliasEditorHtml() + '</td>';
-  var deleteBtn = live
-    ? ''
+  var deleteBtn = live || locked
+    ? '<button type="button" class="danger is-idle" disabled tabindex="-1" aria-hidden="true">Delete</button>'
     : '<button type="button" class="danger" data-delete="1">Delete</button>';
   var acts = locked
-    ? '<td class="acts"><div class="acts-row">' + historyBtn + '</div></td>'
-    : '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" data-save="1" disabled>Save</button><button type="button" data-discard="1" disabled>Discard</button>' + deleteBtn + '</span></div></td>';
+    ? '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" class="is-idle" disabled tabindex="-1" aria-hidden="true">Save</button><button type="button" class="is-idle" disabled tabindex="-1" aria-hidden="true">Discard</button>' + deleteBtn + '</span></div></td>'
+    : '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" class="is-idle" data-save="1" disabled>Save</button><button type="button" class="is-idle" data-discard="1" disabled>Discard</button>' + deleteBtn + '</span></div></td>';
   wrap.innerHTML =
     nameCell +
     seriesCell +
@@ -358,6 +371,27 @@ function entityRow(entity, locked, series) {
     });
   }
   return wrap;
+}
+function catalogSortMode(id) {
+  var sel = document.getElementById(id);
+  var value = sel && sel.value;
+  if (value === 'edited' || value === 'name') return value;
+  return 'added';
+}
+function sortEntities(list, mode) {
+  return list.slice().sort(function (left, right) {
+    if (mode === 'name') {
+      var named = String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
+      if (named) return named;
+      return String(left.key || '').localeCompare(String(right.key || ''));
+    }
+    var leftTime = mode === 'edited' ? (left.lastEditedAt || 0) : (left.addedAt || 0);
+    var rightTime = mode === 'edited' ? (right.lastEditedAt || 0) : (right.addedAt || 0);
+    if (rightTime !== leftTime) return rightTime - leftTime;
+    var byName = String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
+    if (byName) return byName;
+    return String(left.key || '').localeCompare(String(right.key || ''));
+  });
 }
 function emptyState(list, label, cols) {
   if (list.children.length) return;
@@ -505,7 +539,11 @@ window.krtaDraftEditor = function () {
       setPending(button, ready && !conflicted);
     }
     var discard = row.querySelector('[data-discard]');
-    if (discard) discard.disabled = !dirty;
+    if (discard) {
+      discard.disabled = !dirty;
+      discard.classList.toggle('is-idle', !dirty);
+    }
+    if (button) button.classList.toggle('is-idle', !dirty);
     setPending(row.querySelector('td.name'), nameDirty);
     setPending(row.querySelector('td.series'), seriesDirty);
     setPending(aliasCell(row), aliasDirty);
@@ -530,7 +568,10 @@ window.krtaDraftEditor = function () {
     if (button) button.disabled = !ready;
     syncSeriesHint(series);
     var discard = row.querySelector('#discard-series, #discard-character');
-    if (discard) discard.disabled = !dirty;
+    if (discard) {
+      discard.disabled = !dirty;
+      discard.classList.toggle('is-idle', !dirty);
+    }
     syncSaveAll();
   }
   function syncDescriptionPending() {
@@ -824,7 +865,7 @@ window.krtaDraftEditor = function () {
     if (seriesList) {
       seriesList.replaceChildren();
       if (addSeriesRow && !state.locked) seriesList.append(addSeriesRow);
-      state.series.forEach(function (entity) {
+      sortEntities(state.series, catalogSortMode('series-sort')).forEach(function (entity) {
         seriesList.append(entityRow(entity, state.locked));
       });
       if (!state.series.length && state.locked) emptyState(seriesList, 'series', 4);
@@ -832,7 +873,7 @@ window.krtaDraftEditor = function () {
     if (characterList) {
       characterList.replaceChildren();
       if (addCharacterRow && !state.locked) characterList.append(addCharacterRow);
-      state.characters.forEach(function (entity) {
+      sortEntities(state.characters, catalogSortMode('character-sort')).forEach(function (entity) {
         characterList.append(entityRow(entity, state.locked, state.series));
       });
       if (!state.characters.length && state.locked) emptyState(characterList, 'characters', 5);
@@ -882,6 +923,25 @@ window.krtaDraftEditor = function () {
   }
   async function save(mutation, options) {
     var silent = !!(options && options.silent);
+    if (mutation.action !== 'delete') {
+      var saveName = String(mutation.name || '').trim();
+      if (saveName.length > MAX_NAME) {
+        if (!silent) showStatus(status, 'Name is too long.', true);
+        return { ok: false, body: { error: 'Name is too long.', code: 'INVALID_INPUT' } };
+      }
+      var seriesName = String(mutation.seriesKey || '').trim();
+      if (seriesName.length > MAX_NAME) {
+        if (!silent) showStatus(status, 'Name is too long.', true);
+        return { ok: false, body: { error: 'Name is too long.', code: 'INVALID_INPUT' } };
+      }
+      var saveAliases = mutation.aliases || [];
+      for (var ai = 0; ai < saveAliases.length; ai++) {
+        if (String(saveAliases[ai] || '').trim().length > MAX_ALIAS) {
+          if (!silent) showStatus(status, 'An alias is too long.', true);
+          return { ok: false, body: { error: 'An alias is too long.', code: 'INVALID_INPUT' } };
+        }
+      }
+    }
     if (mutation.type === 'character' && mutation.action !== 'delete') {
       var seriesLabel = mutation.seriesKey;
       if (!seriesLabel && mutation.key) {
@@ -1493,6 +1553,15 @@ window.krtaDraftEditor = function () {
       commitDescription();
     });
   }
+  function bindCatalogSort(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    sel.addEventListener('change', function () {
+      applyCatalog(state.series, state.characters);
+    });
+  }
+  bindCatalogSort('series-sort');
+  bindCatalogSort('character-sort');
   render();
   window.addEventListener('resize', syncActivityHeight);
   var catalog = document.querySelector('.catalog');

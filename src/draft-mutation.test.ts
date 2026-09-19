@@ -282,4 +282,39 @@ describe('draft mutation', () => {
       })
     }
   })
+
+  it('rejects a name or alias that is too long', () => {
+    try {
+      applyDraftMutation(
+        null,
+        { type: 'series', action: 'add', name: 'A'.repeat(201) },
+        new Set(),
+        '2',
+        'second'
+      )
+      throw new Error('expected long name')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'Name is too long.'
+      })
+    }
+    try {
+      applyDraftMutation(
+        null,
+        { type: 'series', action: 'add', name: 'Naruto', aliases: ['B'.repeat(201)] },
+        new Set(),
+        '2',
+        'second'
+      )
+      throw new Error('expected long alias')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'An alias is too long.'
+      })
+    }
+  })
 })

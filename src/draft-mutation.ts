@@ -1,5 +1,7 @@
 import {
   characterIdentity,
+  cleanDraftAliases,
+  cleanDraftName,
   draftKey,
   resolveDraftSeriesKey,
   uniqueDraftKey,
@@ -40,15 +42,11 @@ export type DraftCharacterRef = {
 }
 
 function requireName(value: string | undefined): string {
-  const name = value?.trim() ?? ''
-  if (!name) {
-    throw new DraftError('INVALID_INPUT', 'Name is required.', 400)
-  }
-  return name
+  return cleanDraftName(value)
 }
 
 function aliasesOf(value: string[] | undefined, fallback: string[]): string[] {
-  return value ?? fallback
+  return value === undefined ? fallback : cleanDraftAliases(value)
 }
 
 function sameAliases(left: readonly string[], right: readonly string[]): boolean {
@@ -115,7 +113,7 @@ function adoptSeries(
   if (typeof raw !== 'string' || !raw.trim()) {
     return { seriesKey: '' }
   }
-  const name = raw.trim()
+  const name = cleanDraftName(raw)
   const key = draftKey(name)
   if (!key) {
     return { seriesKey: '' }

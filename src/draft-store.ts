@@ -1,4 +1,5 @@
 import { parseDraftCatalog } from './draft-catalog'
+import { sortDraftEntities } from './draft-sort'
 import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
 import {
   catalogsMatch,
@@ -75,6 +76,49 @@ function parseAliases(raw: string): string[] {
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
   } catch {
     return []
+  }
+}
+
+type EntityTimeRow = {
+  entity_type: string
+  entity_key: string
+  added_at: number
+  last_edited_at: number
+}
+
+async function loadEntityTimes(
+  db: D1Database,
+  draftId: number
+): Promise<Map<string, { addedAt: number; lastEditedAt: number }>> {
+  const result = await db.prepare(
+    `SELECT entity_type, entity_key,
+            MIN(created_at) AS added_at,
+            MAX(created_at) AS last_edited_at
+     FROM draft_audit
+     WHERE draft_id = ?
+       AND entity_type IN ('series', 'character')
+       AND action IN ('add', 'update', 'delete', 'import')
+     GROUP BY entity_type, entity_key`
+  ).bind(draftId).all<EntityTimeRow>()
+  const times = new Map<string, { addedAt: number; lastEditedAt: number }>()
+  for (const row of result.results ?? []) {
+    times.set(`${row.entity_type}\0${row.entity_key}`, {
+      addedAt: row.added_at,
+      lastEditedAt: row.last_edited_at
+    })
+  }
+  return times
+}
+
+function stampEntity(
+  entity: DraftEntity,
+  times: Map<string, { addedAt: number; lastEditedAt: number }>
+): DraftEntity {
+  const stamp = times.get(`${entity.type}\0${entity.key}`)
+  return {
+    ...entity,
+    addedAt: stamp?.addedAt ?? entity.addedAt ?? 0,
+    lastEditedAt: stamp?.lastEditedAt ?? entity.lastEditedAt ?? 0
   }
 }
 
@@ -315,18 +359,21 @@ export async function getDraft(db: D1Database, id: number): Promise<DraftRecord 
             base_aliases, revision, last_editor_id, last_editor_name
      FROM draft_entities
      WHERE draft_id = ?
-     ORDER BY entity_type, name COLLATE NOCASE, entity_key`
+     ORDER BY entity_type, entity_key`
   ).bind(id).all<EntityRow>()
+  const times = await loadEntityTimes(db, id)
   const series: DraftSeries[] = []
   const characters: DraftCharacter[] = []
   for (const entityRow of result.results ?? []) {
-    const entity = rowToEntity(entityRow)
+    const entity = stampEntity(rowToEntity(entityRow), times)
     if (entity.type === 'series') {
       series.push(entity)
     } else {
       characters.push(entity)
     }
   }
+  series.splice(0, series.length, ...sortDraftEntities(series, 'added'))
+  characters.splice(0, characters.length, ...sortDraftEntities(characters, 'added'))
   return {
     id: row.id,
     createdAt: row.created_at,
@@ -648,10 +695,13 @@ export async function mutateDraftEntity(
       latest ? rowToEntity(latest) : null
     )
   }
+  const times = await loadEntityTimes(db, draftId)
   return {
-    entity: result.entity,
+    entity: result.entity ? stampEntity(result.entity, times) : result.entity,
     saveId: batchSaveId,
     adoptedSeries: result.adoptedSeries
+      ? stampEntity(result.adoptedSeries, times) as DraftSeries
+      : result.adoptedSeries
   }
 }
 
