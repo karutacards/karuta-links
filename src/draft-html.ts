@@ -163,11 +163,17 @@ function layout(title: string, body: string, script = ''): string {
       line-height: 1.2;
       font-weight: 400;
     }
-    .activity .save-id {
-      color: var(--muted);
+    .activity .save-id,
+    .history-log .save-id {
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.625rem;
       line-height: 1.2;
-      font-weight: 400;
+      font-weight: 600;
+      padding: 0.04rem 0.28rem;
+      border: 1px solid var(--line);
+      border-radius: 0.2rem;
+      background: #0e1016;
     }
     .activity li.superseded,
     .history-log li.superseded { opacity: 0.45; }

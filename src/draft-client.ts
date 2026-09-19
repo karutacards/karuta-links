@@ -245,7 +245,7 @@ function activityGroup(group) {
   head.append(when);
   var label = document.createElement('span');
   label.className = 'save-id';
-  label.textContent = group.kind === 'save' && group.saveId != null ? '#' + group.saveId : 'Imported';
+  label.textContent = group.kind === 'save' && group.saveId != null ? '#' + group.saveId : 'Import';
   head.append(label);
   wrap.append(head);
   var inner = document.createElement('ol');
