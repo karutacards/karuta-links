@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   catalogsMatch,
+  groupDraftActivity,
   isRestorableAuditAction,
+  isSaveAuditAction,
+  liveActivityIds,
   replayDraftAudit,
   restoreIdentityFromCatalog
 } from './draft-restore'
@@ -25,6 +28,7 @@ function audit(overrides: Partial<DraftAuditRow>): DraftAuditRow {
     discordId: '1',
     username: 'craig',
     createdAt: 10,
+    saveId: null,
     ...overrides
   }
 }
@@ -193,6 +197,35 @@ describe('draft activity restore replay', () => {
     expect(isRestorableAuditAction('restore')).toBe(true)
     expect(isRestorableAuditAction('lock')).toBe(false)
     expect(isRestorableAuditAction('unlock')).toBe(false)
+    expect(isSaveAuditAction('update')).toBe(true)
+    expect(isSaveAuditAction('import')).toBe(false)
+    expect(liveActivityIds([
+      { id: 1, action: 'import' },
+      { id: 2, action: 'update' },
+      { id: 3, action: 'update' },
+      { id: 4, action: 'restore', targetId: 1 },
+      { id: 5, action: 'update' }
+    ])).toEqual([1, 4, 5])
+    expect(liveActivityIds([
+      { id: 1, action: 'import' },
+      { id: 2, action: 'update', saveId: 10 },
+      { id: 3, action: 'delete', saveId: 10 },
+      { id: 4, action: 'restore', targetId: 10 },
+      { id: 5, action: 'update', saveId: 11 }
+    ])).toEqual([1, 2, 3, 4, 5])
+    expect(groupDraftActivity([
+      { id: 1, action: 'import' },
+      { id: 2, action: 'import' },
+      { id: 3, action: 'update', saveId: 10 },
+      { id: 4, action: 'delete', saveId: 10 },
+      { id: 5, action: 'lock' },
+      { id: 6, action: 'describe', saveId: 11 }
+    ])).toEqual([
+      { kind: 'import', saveId: null, events: [{ id: 1, action: 'import' }, { id: 2, action: 'import' }] },
+      { kind: 'save', saveId: 10, events: [{ id: 3, action: 'update', saveId: 10 }, { id: 4, action: 'delete', saveId: 10 }] },
+      { kind: 'note', saveId: null, events: [{ id: 5, action: 'lock' }] },
+      { kind: 'save', saveId: 11, events: [{ id: 6, action: 'describe', saveId: 11 }] }
+    ])
     expect(catalogsMatch({
       description: 'Hold.',
       series: [{

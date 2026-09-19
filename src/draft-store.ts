@@ -2,7 +2,8 @@ import { parseDraftCatalog } from './draft-catalog'
 import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
 import {
   catalogsMatch,
-  isRestorableAuditAction,
+  isSaveAuditAction,
+  lastEventIdForSave,
   replayDraftAudit,
   restoreIdentityFromCatalog
 } from './draft-restore'
@@ -10,6 +11,7 @@ import { applyDraftMutation, type DraftMutation } from './draft-mutation'
 import { allocateId } from './db'
 import {
   DRAFT_SECTION,
+  DRAFT_SAVES_SECTION,
   DraftError,
   type DraftAuditEvent,
   type DraftAuditRow,
@@ -59,6 +61,7 @@ type AuditDbRow = {
   discord_id: string
   username: string
   created_at: number
+  save_id: number | null
 }
 
 type PresenceDbRow = {
@@ -165,8 +168,27 @@ function toAuditRow(row: AuditDbRow): DraftAuditRow {
     afterJson: row.after_json,
     discordId: row.discord_id,
     username: row.username,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    saveId: row.save_id ?? null
   }
+}
+
+async function resolveSaveId(
+  db: D1Database,
+  draftId: number,
+  requested: number | null
+): Promise<number> {
+  if (requested == null) return allocateId(db, DRAFT_SAVES_SECTION)
+  if (!Number.isSafeInteger(requested) || requested < 1) {
+    throw new DraftError('INVALID_INPUT', 'Save id must be a positive integer.', 400)
+  }
+  const row = await db.prepare(
+    `SELECT 1 AS ok FROM draft_audit WHERE draft_id = ? AND save_id = ? LIMIT 1`
+  ).bind(draftId, requested).first()
+  if (!row) {
+    throw new DraftError('INVALID_INPUT', 'That save does not exist on this draft.', 400)
+  }
+  return requested
 }
 
 function toAuditEvent(
@@ -325,7 +347,7 @@ export async function listEntityAudit(
 ): Promise<DraftAuditRow[]> {
   const result = await db.prepare(
     `SELECT id, entity_type, entity_key, action, before_json, after_json,
-            discord_id, username, created_at
+            discord_id, username, created_at, save_id
      FROM draft_audit
      WHERE draft_id = ? AND entity_type = ? AND entity_key = ?
      ORDER BY created_at DESC, id DESC`
@@ -342,7 +364,7 @@ export async function listDraftEvents(
   const cursor = Number.isSafeInteger(after) && after > 0 ? after : 0
   const result = await db.prepare(
     `SELECT id, entity_type, entity_key, action, before_json, after_json,
-            discord_id, username, created_at
+            discord_id, username, created_at, save_id
      FROM draft_audit
      WHERE draft_id = ? AND id > ?
      ORDER BY id ASC`
@@ -414,8 +436,9 @@ export async function mutateDraftEntity(
   mutation: DraftMutation,
   editorId: string,
   editorName: string,
-  now = Date.now()
-): Promise<DraftEntity | null> {
+  now = Date.now(),
+  saveId: number | null = null
+): Promise<{ entity: DraftEntity | null; saveId: number }> {
   const draft = await getDraftRow(db, draftId)
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
@@ -454,6 +477,7 @@ export async function mutateDraftEntity(
     editorName,
     draftSeries
   )
+  const batchSaveId = await resolveSaveId(db, draftId, saveId)
   const statements = [
     db.prepare(`UPDATE drafts SET updated_at = ? WHERE id = ?`).bind(now, draftId)
   ]
@@ -484,8 +508,8 @@ export async function mutateDraftEntity(
           db.prepare(
             `INSERT INTO draft_audit
              (draft_id, entity_type, entity_key, action, before_json, after_json,
-              discord_id, username, created_at)
-             VALUES (?, ?, ?, 'delete', ?, NULL, ?, ?, ?)`
+              discord_id, username, created_at, save_id)
+             VALUES (?, ?, ?, 'delete', ?, NULL, ?, ?, ?, ?)`
           ).bind(
             draftId,
             child.type,
@@ -493,7 +517,8 @@ export async function mutateDraftEntity(
             entityPayload(child, seriesRefs),
             editorId,
             editorName,
-            now
+            now,
+            batchSaveId
           )
         )
       }
@@ -544,8 +569,8 @@ export async function mutateDraftEntity(
     db.prepare(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
-        discord_id, username, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        discord_id, username, created_at, save_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       draftId,
       mutation.type,
@@ -555,7 +580,8 @@ export async function mutateDraftEntity(
       result.after ? entityPayload(result.after, draftSeries) : null,
       editorId,
       editorName,
-      now
+      now,
+      batchSaveId
     )
   )
   const outcomes = await db.batch(statements)
@@ -571,7 +597,7 @@ export async function mutateDraftEntity(
       latest ? rowToEntity(latest) : null
     )
   }
-  return result.entity
+  return { entity: result.entity, saveId: batchSaveId }
 }
 
 async function readDraftOrThrow(db: D1Database, draftId: number): Promise<DraftRecord> {
@@ -650,8 +676,9 @@ export async function setDraftDescription(
   description: string,
   editorId: string,
   editorName: string,
-  now = Date.now()
-): Promise<DraftRecord> {
+  now = Date.now(),
+  saveId: number | null = null
+): Promise<{ draft: DraftRecord; saveId: number | null }> {
   const draft = await getDraftRow(db, draftId)
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
@@ -662,8 +689,9 @@ export async function setDraftDescription(
   }
   const current = draft.description ?? ''
   if (current === next) {
-    return readDraftOrThrow(db, draftId)
+    return { draft: await readDraftOrThrow(db, draftId), saveId }
   }
+  const batchSaveId = await resolveSaveId(db, draftId, saveId)
   await db.batch([
     db.prepare(
       `UPDATE drafts SET description = ?, updated_at = ? WHERE id = ?`
@@ -671,29 +699,62 @@ export async function setDraftDescription(
     db.prepare(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
-        discord_id, username, created_at)
-       VALUES (?, 'draft', '', 'describe', ?, ?, ?, ?, ?)`
+        discord_id, username, created_at, save_id)
+       VALUES (?, 'draft', '', 'describe', ?, ?, ?, ?, ?, ?)`
     ).bind(
       draftId,
       JSON.stringify({ description: current }),
       JSON.stringify({ description: next }),
       editorId,
       editorName,
-      now
+      now,
+      batchSaveId
     )
   ])
-  return readDraftOrThrow(db, draftId)
+  return { draft: await readDraftOrThrow(db, draftId), saveId: batchSaveId }
 }
 
 async function listAllDraftAudit(db: D1Database, draftId: number): Promise<DraftAuditRow[]> {
   const result = await db.prepare(
     `SELECT id, entity_type, entity_key, action, before_json, after_json,
-            discord_id, username, created_at
+            discord_id, username, created_at, save_id
      FROM draft_audit
      WHERE draft_id = ?
      ORDER BY id ASC`
   ).bind(draftId).all<AuditDbRow>()
   return (result.results ?? []).map(toAuditRow)
+}
+
+function resolveRestoreTarget(
+  audits: readonly DraftAuditRow[],
+  requested: number
+): { throughId: number; saveId: number; createdAt: number } {
+  const ofSave = audits.filter((row) => row.saveId === requested)
+  if (ofSave.length) {
+    return {
+      throughId: lastEventIdForSave(ofSave, requested) ?? ofSave[ofSave.length - 1].id,
+      saveId: requested,
+      createdAt: ofSave[0].createdAt
+    }
+  }
+  const target = audits.find((row) => row.id === requested)
+  if (!target) {
+    throw new DraftError('NOT_FOUND', 'That save is not on this draft.', 404)
+  }
+  if (target.action === 'import') {
+    throw new DraftError('INVALID_INPUT', 'Imports cannot be restored.', 400)
+  }
+  if (!isSaveAuditAction(target.action)) {
+    throw new DraftError('INVALID_INPUT', 'Pick a save in Activity.', 400)
+  }
+  if (target.saveId != null && target.saveId !== target.id) {
+    throw new DraftError('INVALID_INPUT', 'Pick the start of a save in Activity.', 400)
+  }
+  return {
+    throughId: target.id,
+    saveId: target.saveId ?? target.id,
+    createdAt: target.createdAt
+  }
 }
 
 export async function restoreDraft(
@@ -705,7 +766,7 @@ export async function restoreDraft(
   now = Date.now()
 ): Promise<DraftRecord> {
   if (!Number.isSafeInteger(eventId) || eventId < 1) {
-    throw new DraftError('INVALID_INPUT', 'Event id must be a positive integer.', 400)
+    throw new DraftError('INVALID_INPUT', 'Save id must be a positive integer.', 400)
   }
   const current = await getDraft(db, draftId)
   if (!current) {
@@ -715,14 +776,8 @@ export async function restoreDraft(
     throw new DraftError('LOCKED', 'This draft is locked.', 423)
   }
   const audits = await listAllDraftAudit(db, draftId)
-  const target = audits.find((row) => row.id === eventId)
-  if (!target) {
-    throw new DraftError('NOT_FOUND', 'That Activity line is not on this draft.', 404)
-  }
-  if (!isRestorableAuditAction(target.action)) {
-    throw new DraftError('INVALID_INPUT', 'Pick a save in Activity, not a lock.', 400)
-  }
-  const replayed = replayDraftAudit(audits, eventId, restoreIdentityFromCatalog(current))
+  const target = resolveRestoreTarget(audits, eventId)
+  const replayed = replayDraftAudit(audits, target.throughId, restoreIdentityFromCatalog(current))
   if (catalogsMatch(current, replayed)) {
     return current
   }
@@ -783,9 +838,9 @@ export async function restoreDraft(
        VALUES (?, 'draft', '', 'restore', ?, ?, ?, ?, ?)`
     ).bind(
       draftId,
-      JSON.stringify({ eventId: target.id, createdAt: target.createdAt }),
+      JSON.stringify({ eventId: target.saveId, createdAt: target.createdAt }),
       JSON.stringify({
-        eventId: target.id,
+        eventId: target.saveId,
         createdAt: target.createdAt,
         description: replayed.description,
         series: replayed.series,

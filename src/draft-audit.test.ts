@@ -13,6 +13,7 @@ function row(overrides: Partial<DraftAuditRow>): DraftAuditRow {
     discordId: '1',
     username: 'craig',
     createdAt: 1,
+    saveId: null,
     ...overrides
   }
 }
@@ -182,7 +183,7 @@ describe('draft audit sentences', () => {
       action: 'restore',
       beforeJson: JSON.stringify({ eventId: 2, createdAt: 10 }),
       afterJson: JSON.stringify({ eventId: 2, createdAt: 10 })
-    }))).toBe('@craig restored this draft to an earlier save.')
+    }))).toBe('@craig restored this draft to #2.')
     expect(draftAuditSentence(row({
       entityType: 'character',
       entityKey: 'x',

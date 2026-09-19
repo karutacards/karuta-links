@@ -1,6 +1,7 @@
 import { rebaseDraftPending } from './draft-rebase'
+import { groupDraftActivity, lastEventIdForSave, liveActivityIds } from './draft-restore'
 
-export const DRAFT_CLIENT_SCRIPT = 'var rebaseDraftPending = ' + rebaseDraftPending.toString() + ';\n' + `
+export const DRAFT_CLIENT_SCRIPT = 'var rebaseDraftPending = ' + rebaseDraftPending.toString() + ';\nvar lastEventIdForSave = ' + lastEventIdForSave.toString() + ';\nvar groupDraftActivity = ' + groupDraftActivity.toString() + ';\nvar liveActivityIds = ' + liveActivityIds.toString() + ';\n' + `
 function showStatus(el, message, isError) {
   if (!el) return;
   el.hidden = !message;
@@ -164,16 +165,40 @@ function canRestoreActivity() {
   var list = document.getElementById('draft-activity');
   return !!(list && list.getAttribute('data-restore') === '1');
 }
-function restorableActivity(entry) {
-  if (entry == null || entry.id == null) return false;
-  return entry.action !== 'lock' && entry.action !== 'unlock';
+function restoreIcon() {
+  var ns = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  var path = document.createElementNS(ns, 'path');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.5');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  path.setAttribute('d', 'M3.5 8a4.5 4.5 0 1 0 1.3-3.1M3.5 2.5v3h3');
+  svg.appendChild(path);
+  return svg;
 }
-function activityItem(entry, withRestore) {
+function activityItem(entry, options) {
+  options = options || {};
   var item = document.createElement('li');
   if (entry.id != null) item.dataset.auditId = String(entry.id);
-  var when = document.createElement('time');
-  when.className = 'when';
-  when.textContent = entry.createdAt || '';
+  if (!options.compact) {
+    var stamp = document.createElement('div');
+    stamp.className = 'stamp';
+    var when = document.createElement('time');
+    when.className = 'when';
+    when.textContent = entry.createdAt || '';
+    stamp.append(when);
+    if (entry.saveId != null) {
+      var saveId = document.createElement('span');
+      saveId.className = 'save-id';
+      saveId.textContent = '#' + entry.saveId;
+      stamp.append(saveId);
+    }
+    item.append(stamp);
+  }
   var line = document.createElement('p');
   var actor = document.createElement('span');
   actor.className = 'actor';
@@ -193,16 +218,43 @@ function activityItem(entry, withRestore) {
   } else {
     line.append(document.createTextNode(' ' + (entry.summary || '')));
   }
-  item.append(when, line);
-  if (withRestore && canRestoreActivity() && restorableActivity(entry)) {
+  item.append(line);
+  return item;
+}
+function activityGroup(group) {
+  if (group.kind === 'note') return activityItem(group.events[0]);
+  var wrap = document.createElement('li');
+  wrap.className = 'activity-group ' + group.kind;
+  if (group.saveId != null) wrap.dataset.saveId = String(group.saveId);
+  var head = document.createElement('div');
+  head.className = 'activity-group-head stamp';
+  if (group.kind === 'save' && canRestoreActivity() && group.saveId != null) {
+    wrap.classList.add('has-restore');
     var button = document.createElement('button');
     button.type = 'button';
     button.className = 'restore';
-    button.dataset.restoreEvent = String(entry.id);
-    button.textContent = 'Restore';
-    item.append(button);
+    button.dataset.restoreEvent = String(group.saveId);
+    button.setAttribute('aria-label', 'Restore');
+    button.title = 'Restore';
+    button.append(restoreIcon());
+    head.append(button);
   }
-  return item;
+  var when = document.createElement('time');
+  when.className = 'when';
+  when.textContent = group.events[0] && group.events[0].createdAt ? group.events[0].createdAt : '';
+  head.append(when);
+  var label = document.createElement('span');
+  label.className = 'save-id';
+  label.textContent = group.kind === 'save' && group.saveId != null ? '#' + group.saveId : 'Imported';
+  head.append(label);
+  wrap.append(head);
+  var inner = document.createElement('ol');
+  inner.className = 'activity-group-events';
+  group.events.forEach(function (entry) {
+    inner.append(activityItem(entry, { compact: true }));
+  });
+  wrap.append(inner);
+  return wrap;
 }
 function presenceKey(list) {
   return (list || []).map(function (person) {
@@ -467,6 +519,7 @@ window.krtaDraftEditor = function () {
       return;
     }
     rows.forEach(function (entry) { list.append(activityItem(entry)); });
+    syncActivityTimeline();
   }
   async function openHistory(type, key, row) {
     var dialog = document.getElementById('draft-history');
@@ -502,6 +555,9 @@ window.krtaDraftEditor = function () {
             id: entry.id,
             entityType: type,
             entityKey: key,
+            action: entry.action,
+            targetId: entry.targetId,
+            saveId: entry.saveId,
             actor: entry.actor,
             spans: entry.spans,
             username: entry.username,
@@ -527,11 +583,36 @@ window.krtaDraftEditor = function () {
     if (!list || !events.length) return;
     var pin = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
     events.forEach(function (entry) {
-      if (entry.id != null && list.querySelector('[data-audit-id="' + entry.id + '"]')) return;
-      list.append(activityItem(entry, true));
+      if (entry.id != null && eventLog.some(function (item) { return item.id === entry.id; })) return;
       eventLog.push(entry);
     });
+    renderActivityList(list);
     if (pin) list.scrollTop = list.scrollHeight;
+  }
+  function renderActivityList(list) {
+    list.replaceChildren();
+    groupDraftActivity(eventLog).forEach(function (group) {
+      list.append(activityGroup(group));
+    });
+    syncActivityTimeline();
+  }
+  function syncActivityTimeline() {
+    var live = {};
+    liveActivityIds(eventLog).forEach(function (id) { live[id] = true; });
+    document.querySelectorAll('#draft-history-list [data-audit-id]').forEach(function (li) {
+      li.classList.toggle('superseded', !live[Number(li.dataset.auditId)]);
+    });
+    document.querySelectorAll('#draft-activity > li').forEach(function (li) {
+      if (li.classList.contains('activity-group')) {
+        var anyLive = false;
+        li.querySelectorAll('[data-audit-id]').forEach(function (child) {
+          if (live[Number(child.dataset.auditId)]) anyLive = true;
+        });
+        li.classList.toggle('superseded', !anyLive);
+        return;
+      }
+      li.classList.toggle('superseded', li.dataset.auditId != null && !live[Number(li.dataset.auditId)]);
+    });
   }
   function syncOpenHistory(events) {
     var dialog = document.getElementById('draft-history');
@@ -680,6 +761,31 @@ window.krtaDraftEditor = function () {
     if (addSeriesRow) syncAddRow(addSeriesRow);
     if (addCharacterRow) syncAddRow(addCharacterRow);
     syncSaveAll();
+    syncActivityHeight();
+  }
+  function catalogFitsOnPage() {
+    var catalog = document.querySelector('.catalog');
+    if (!catalog) return false;
+    var bottom = catalog.getBoundingClientRect().top + window.scrollY + catalog.offsetHeight;
+    return bottom <= document.documentElement.clientHeight + 1;
+  }
+  function syncActivityHeight() {
+    var workspace = document.querySelector('.workspace');
+    var panel = document.querySelector('.activity-panel');
+    if (!workspace || !panel) return;
+    if (!window.matchMedia('(min-width: 64rem)').matches) {
+      workspace.classList.remove('activity-fill');
+      panel.style.maxHeight = '';
+      return;
+    }
+    var fill = catalogFitsOnPage();
+    workspace.classList.toggle('activity-fill', fill);
+    if (!fill) {
+      panel.style.maxHeight = '';
+      return;
+    }
+    var room = document.documentElement.clientHeight - panel.getBoundingClientRect().top - 12;
+    panel.style.maxHeight = Math.max(0, room) + 'px';
   }
   function replaceEntity(entity) {
     if (!entity) return;
@@ -708,9 +814,11 @@ window.krtaDraftEditor = function () {
           : 'Saving will delete this series and ' + cascadeCount + ' characters.', false);
       }
     }
+    var payload = Object.assign({}, mutation);
+    if (options && options.saveId != null) payload.saveId = options.saveId;
     var result = await api('/api/v1/drafts/' + state.id + '/entities', {
       method: 'PATCH',
-      body: JSON.stringify(mutation)
+      body: JSON.stringify(payload)
     });
     if (result.response.status === 409 || result.response.status === 423) {
       var prior = entityBaseline(findEntity(mutation.type, mutation.key));
@@ -819,12 +927,17 @@ window.krtaDraftEditor = function () {
     } catch (e) { kind = ''; }
     if (kind === 'locked') showStatus(status, 'This draft was locked.', false);
     if (kind === 'unlocked') showStatus(status, 'This draft was unlocked.', false);
+    if (kind === 'restored') showStatus(status, 'This draft was restored to an earlier save.', false);
   }
   async function saveAll() {
     if (saveAllBusy || state.locked) return;
     saveAllBusy = true;
     syncSaveAll();
-    if (descriptionDirty()) await commitDescription();
+    var batchSaveId = null;
+    if (descriptionDirty()) {
+      var described = await commitDescription(batchSaveId);
+      if (described && described.saveId != null) batchSaveId = described.saveId;
+    }
     var pending = dirtyRows().filter(function (item) {
       var row = findRow(item.edit.type, item.edit.key);
       if (row && row.querySelector('[data-conflict]')) return false;
@@ -868,8 +981,11 @@ window.krtaDraftEditor = function () {
         name: item.edit.name,
         seriesKey: item.edit.seriesDirty ? item.edit.seriesLabel : undefined,
         aliases: item.edit.aliases
-      }, { silent: true });
-      if (result.ok) saved += 1;
+      }, { silent: true, saveId: batchSaveId });
+      if (result.ok) {
+        saved += 1;
+        if (result.body && result.body.saveId != null) batchSaveId = result.body.saveId;
+      }
       else if (result.body && result.body.code === 'CONFLICT') {
         rebased.push({
           edit: result.edit || item.edit,
@@ -958,7 +1074,7 @@ window.krtaDraftEditor = function () {
   }
   document.addEventListener('click', async function (event) {
     var target = event.target;
-    if (!(target instanceof HTMLElement)) return;
+    if (!(target instanceof Element)) return;
     var row = target.closest('.row');
     if (target.dataset.aliasAdd) {
       var box = target.closest('.aliases');
@@ -1030,18 +1146,19 @@ window.krtaDraftEditor = function () {
         showStatus(status, 'Save or discard your edits before restoring.', true);
         return;
       }
-      if (!window.confirm('Restore this draft to this Activity line? Later saves stay in the log.')) {
+      var restoreId = Number(restoreBtn.getAttribute('data-restore-event'));
+      if (!window.confirm('Restore this draft to save #' + restoreId + '? Later saves stay in the log.')) {
         return;
       }
-      var restoreId = Number(restoreBtn.getAttribute('data-restore-event'));
       var restored = await api('/api/v1/drafts/' + state.id + '/restore', {
         method: 'POST',
-        body: JSON.stringify({ eventId: restoreId })
+        body: JSON.stringify({ saveId: restoreId })
       });
       if (!restored.response.ok) {
         showStatus(status, restored.body && restored.body.error ? restored.body.error : 'The draft could not be restored.', true);
         return;
       }
+      rememberLockNotice('restored');
       window.location.reload();
       return;
     }
@@ -1160,19 +1277,21 @@ window.krtaDraftEditor = function () {
       view.textContent = next;
     }
   }
-  async function commitDescription() {
+  async function commitDescription(saveId) {
     var field = document.getElementById('draft-description');
     if (!field || !state.canLock || descriptionBusy) return;
     var next = field.value.replace(/^\s+|\s+$/g, '');
     if (next === state.description) {
       field.value = next;
       syncDescriptionPending();
-      return;
+      return { saveId: saveId };
     }
     descriptionBusy = true;
+    var payload = { description: next };
+    if (saveId != null) payload.saveId = saveId;
     var result = await api('/api/v1/drafts/' + state.id, {
       method: 'PATCH',
-      body: JSON.stringify({ description: next })
+      body: JSON.stringify(payload)
     });
     descriptionBusy = false;
     if (!result.response.ok) {
@@ -1182,6 +1301,7 @@ window.krtaDraftEditor = function () {
     state.description = result.body && typeof result.body.description === 'string' ? result.body.description : next;
     field.value = state.description;
     syncDescriptionPending();
+    return { saveId: result.body && result.body.saveId != null ? result.body.saveId : saveId };
   }
   async function poll() {
     if (document.hidden || polling) return;
@@ -1196,8 +1316,13 @@ window.krtaDraftEditor = function () {
         window.location.reload();
         return;
       }
-      applyDescription(body.description);
       var events = Array.isArray(body.events) ? body.events : [];
+      if (after > 0 && events.some(function (entry) { return entry.action === 'restore'; })) {
+        rememberLockNotice('restored');
+        window.location.reload();
+        return;
+      }
+      applyDescription(body.description);
       var nextPresence = presenceKey(body.presence);
       var presenceChanged = nextPresence !== lastPresence;
       if (!events.length && !presenceChanged && body.after === after) return;
@@ -1208,16 +1333,11 @@ window.krtaDraftEditor = function () {
         renderPresence(body.presence);
       }
       var catalogEvents = events.filter(function (entry) {
-        return entry.entityType !== 'draft' || entry.action === 'restore';
+        return entry.entityType !== 'draft';
       });
       if (catalogEvents.length) {
         applyCatalog(body.series || [], body.characters || []);
-        syncOpenHistory(catalogEvents.filter(function (entry) {
-          return entry.entityType !== 'draft';
-        }));
-      }
-      if (events.some(function (entry) { return entry.action === 'restore'; })) {
-        showStatus(status, 'This draft was restored to an earlier save.', false);
+        syncOpenHistory(catalogEvents);
       }
     } finally {
       polling = false;
@@ -1267,6 +1387,11 @@ window.krtaDraftEditor = function () {
     });
   }
   render();
+  window.addEventListener('resize', syncActivityHeight);
+  var catalog = document.querySelector('.catalog');
+  if (catalog && typeof ResizeObserver === 'function') {
+    new ResizeObserver(syncActivityHeight).observe(catalog);
+  }
   poll();
   startPolling();
   showLockNotice();

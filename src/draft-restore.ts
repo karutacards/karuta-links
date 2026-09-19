@@ -59,6 +59,87 @@ export function isRestorableAuditAction(action: string): boolean {
   return action !== 'lock' && action !== 'unlock'
 }
 
+export function isSaveAuditAction(action: string): boolean {
+  return action === 'add' || action === 'update' || action === 'delete' || action === 'describe'
+}
+
+export type DraftActivityGroupKind = 'import' | 'save' | 'note'
+
+export type DraftActivityGroup<T> = {
+  kind: DraftActivityGroupKind
+  saveId: number | null
+  events: T[]
+}
+
+export function lastEventIdForSave(
+  rows: readonly { id?: number; saveId?: number | null }[],
+  saveId: number
+): number | null {
+  var last: number | null = null
+  ;(rows || []).forEach(function (row) {
+    if (!row || row.id == null) return
+    if (row.saveId === saveId && (last == null || row.id > last)) last = row.id
+  })
+  return last
+}
+
+export function groupDraftActivity<T extends {
+  action?: string
+  saveId?: number | null
+}>(rows: readonly T[]): DraftActivityGroup<T>[] {
+  var groups: DraftActivityGroup<T>[] = []
+  ;(rows || []).forEach(function (row) {
+    if (!row) return
+    var last = groups[groups.length - 1]
+    if (row.action === 'import') {
+      if (last && last.kind === 'import') {
+        last.events.push(row)
+        return
+      }
+      groups.push({ kind: 'import', saveId: null, events: [row] })
+      return
+    }
+    var saveAction = row.action === 'add' || row.action === 'update'
+      || row.action === 'delete' || row.action === 'describe'
+    if (saveAction && row.saveId != null) {
+      if (last && last.kind === 'save' && last.saveId === row.saveId) {
+        last.events.push(row)
+        return
+      }
+      groups.push({ kind: 'save', saveId: row.saveId, events: [row] })
+      return
+    }
+    groups.push({ kind: 'note', saveId: null, events: [row] })
+  })
+  return groups
+}
+
+export function liveActivityIds(rows: readonly {
+  id?: number
+  action?: string
+  saveId?: number | null
+  targetId?: number | null
+}[]): number[] {
+  var live: number[] = []
+  ;(rows || []).forEach(function (row) {
+    if (!row || row.id == null) return
+    if (row.action === 'restore') {
+      var target = Number(row.targetId)
+      var savedThrough = lastEventIdForSave(rows, target)
+      var through = savedThrough == null ? target : savedThrough
+      var next: number[] = []
+      live.forEach(function (id) {
+        if (Number.isSafeInteger(through) && id <= through) next.push(id)
+      })
+      next.push(row.id)
+      live = next
+      return
+    }
+    live.push(row.id)
+  })
+  return live
+}
+
 export function restoreIdentityFromCatalog(
   catalog: Pick<DraftRecord, 'series' | 'characters'>
 ): DraftRestoreIdentity[] {

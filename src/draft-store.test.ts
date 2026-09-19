@@ -33,6 +33,12 @@ function mockDb(options: {
         async first() {
           queries.push({ sql, binds: statement.binds })
           if (sql.includes('FROM drafts')) return options.draft ?? null
+          if (sql.includes('INTO sequences')) return { next_id: 101 }
+          if (sql.includes('FROM draft_audit') && sql.includes('save_id')) {
+            const requested = statement.binds[1]
+            const hit = (options.audit ?? []).some((row) => row.save_id === requested)
+            return hit ? { ok: 1 } : null
+          }
           return null
         },
         async all() {
@@ -94,6 +100,7 @@ describe('draft events store', () => {
       discordId: '1',
       username: 'craig',
       createdAt: 9,
+      saveId: null,
       summary: '@craig added series New Series.',
       actor: 'craig',
       spans: [
@@ -232,7 +239,8 @@ describe('draft events store', () => {
         id: 4,
         entity_type: 'series',
         entity_key: 'naruto',
-        action: 'import',
+        action: 'update',
+        save_id: 4,
         before_json: null,
         after_json: JSON.stringify({
           type: 'series',
@@ -257,6 +265,34 @@ describe('draft events store', () => {
       query.sql.includes("'restore'")
       && query.binds[0] === 2
     ))).toBe(true)
+  })
+
+  it('refuses to restore an import event', async () => {
+    const { db, queries } = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: '' },
+      entities: [],
+      audit: [{
+        id: 4,
+        entity_type: 'series',
+        entity_key: 'naruto',
+        action: 'import',
+        save_id: null,
+        before_json: null,
+        after_json: JSON.stringify({
+          type: 'series',
+          key: 'naruto',
+          name: 'Naruto',
+          aliases: ['Ninja']
+        }),
+        discord_id: '1',
+        username: 'craig',
+        created_at: 9
+      }]
+    })
+    await expect(restoreDraft(db, 2, 4, '1', 'craig', 50)).rejects.toMatchObject({
+      code: 'INVALID_INPUT'
+    })
+    expect(queries.some((query) => query.sql.includes('DELETE FROM draft_entities'))).toBe(false)
   })
 
   it('refuses to restore a lock event', async () => {

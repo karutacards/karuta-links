@@ -14,7 +14,7 @@ import {
   renderDraftNotFound,
   renderDraftUnavailable
 } from './draft-html'
-import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
+import { actorName, draftAuditSentence, draftAuditSpans, restoreTargetId } from './draft-audit'
 import { type DraftMutation } from './draft-mutation'
 import {
   createDraft,
@@ -128,6 +128,16 @@ function parseMutation(body: unknown): DraftMutation {
     seriesKey: typeof record.seriesKey === 'string' ? record.seriesKey : undefined,
     aliases: aliases as string[] | undefined
   }
+}
+
+function parseOptionalSaveId(body: unknown): number | null {
+  if (!body || typeof body !== 'object') return null
+  const value = (body as { saveId?: unknown }).saveId
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new DraftError('INVALID_INPUT', 'Save id must be a positive integer.', 400)
+  }
+  return value
 }
 
 async function requireDraftSession(
@@ -271,14 +281,16 @@ export function registerDrafts(
       return json({ error: 'Description must be a string.', code: 'INVALID_INPUT' }, 400)
     }
     try {
-      const draft = await setDraftDescription(
+      const result = await setDraftDescription(
         c.env.DB,
         id,
         (body as { description: string }).description,
         auth.session.discordId,
-        auth.session.username
+        auth.session.username,
+        Date.now(),
+        parseOptionalSaveId(body)
       )
-      return json({ description: draft.description })
+      return json({ description: result.draft.description, saveId: result.saveId })
     } catch (error) {
       if (error instanceof DraftError) {
         return draftErrorResponse(error)
@@ -323,7 +335,9 @@ export function registerDrafts(
           createdAt: formatApDate(entry.createdAt),
           summary: entry.summary,
           actor: entry.actor,
-          spans: entry.spans
+          spans: entry.spans,
+          saveId: entry.saveId,
+          targetId: restoreTargetId(entry.afterJson) ?? restoreTargetId(entry.beforeJson)
         })),
         series: snapshot.series,
         characters: snapshot.characters,
@@ -357,14 +371,16 @@ export function registerDrafts(
     }
     try {
       const mutation = parseMutation(body)
-      const entity = await mutateDraftEntity(
+      const result = await mutateDraftEntity(
         c.env.DB,
         id,
         mutation,
         auth.session.discordId,
-        auth.session.username
+        auth.session.username,
+        Date.now(),
+        parseOptionalSaveId(body)
       )
-      return json({ entity })
+      return json({ entity: result.entity, saveId: result.saveId })
     } catch (error) {
       if (error instanceof DraftError) {
         return draftErrorResponse(error)
@@ -394,7 +410,10 @@ export function registerDrafts(
         actor: actorName(entry.username),
         spans: draftAuditSpans(entry, series),
         username: entry.username,
-        createdAt: formatApDate(entry.createdAt)
+        createdAt: formatApDate(entry.createdAt),
+        action: entry.action,
+        saveId: entry.saveId,
+        targetId: restoreTargetId(entry.afterJson) ?? restoreTargetId(entry.beforeJson)
       }))
     })
   })
@@ -473,11 +492,10 @@ export function registerDrafts(
     } catch {
       return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
     }
-    const eventId = body && typeof body === 'object'
-      ? Number((body as { eventId?: unknown }).eventId)
-      : NaN
+    const record = body && typeof body === 'object' ? body as { saveId?: unknown; eventId?: unknown } : null
+    const eventId = Number(record?.saveId ?? record?.eventId)
     if (!Number.isSafeInteger(eventId) || eventId < 1) {
-      return json({ error: 'Event id must be a positive integer.', code: 'INVALID_INPUT' }, 400)
+      return json({ error: 'Save id must be a positive integer.', code: 'INVALID_INPUT' }, 400)
     }
     try {
       const draft = await restoreDraft(

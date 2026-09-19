@@ -1,4 +1,5 @@
 export const DRAFT_SECTION = 'drafts'
+export const DRAFT_SAVES_SECTION = 'draft-saves'
 
 export type DraftEntityType = 'series' | 'character'
 
@@ -74,6 +75,7 @@ export type DraftAuditRow = {
   discordId: string
   username: string
   createdAt: number
+  saveId: number | null
 }
 
 export type DraftAuditSpan = {
