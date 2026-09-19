@@ -75,6 +75,7 @@ describe('draft HTML', () => {
     expect(page).not.toContain('max-height: 70vh')
     expect(page).toContain('id="draft-presence"')
     expect(page).toContain('.presence-avatar')
+    expect(page).toContain('margin-inline-start: -0.4rem')
     expect(page).toContain("img.className = 'presence-avatar'")
     expect(page).toContain('class="top-side"')
     expect(page).toContain('position: relative')

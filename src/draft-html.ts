@@ -109,17 +109,20 @@ function layout(title: string, body: string, script = ''): string {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.2rem;
       min-height: 1.5rem;
     }
     .presence-avatar {
       display: block;
       width: 1.375rem;
       height: 1.375rem;
+      margin-inline-start: -0.4rem;
+      border: 0.125rem solid var(--bg);
       border-radius: 50%;
       object-fit: cover;
       background: var(--line);
+      box-sizing: border-box;
     }
+    .presence-avatar:first-child { margin-inline-start: 0; }
     .review {
       display: flex;
       flex-wrap: wrap;
