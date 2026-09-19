@@ -199,6 +199,8 @@ function entityRow(entity, locked, series) {
   wrap.dataset.type = entity.type;
   wrap.dataset.key = entity.key;
   wrap.dataset.revision = String(entity.revision);
+  wrap.dataset.importAction = entity.importAction || 'add';
+  if (entity.type === 'character') wrap.dataset.seriesKey = entity.seriesKey || '';
   var historyBtn = entity.lastEditorName
     ? '<button type="button" data-audit="1" aria-haspopup="dialog">History</button>'
     : '';
@@ -213,9 +215,13 @@ function entityRow(entity, locked, series) {
   var aliasCell = locked
     ? '<td><div class="aliases"><ul class="alias-list" data-alias-list></ul></div></td>'
     : '<td>' + aliasEditorHtml() + '</td>';
+  var live = entity.importAction === 'update';
+  var deleteBtn = live
+    ? ''
+    : '<button type="button" class="danger" data-delete="1">Delete</button>';
   var acts = locked
     ? '<td class="acts"><div class="acts-row">' + historyBtn + '</div></td>'
-    : '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" data-save="1" disabled>Save</button><button type="button" data-discard="1" disabled>Discard</button><button type="button" class="danger" data-delete="1">Delete</button></span></div></td>';
+    : '<td class="acts"><div class="acts-row">' + historyBtn + '<span class="acts-edit"><button type="button" data-save="1" disabled>Save</button><button type="button" data-discard="1" disabled>Discard</button>' + deleteBtn + '</span></div></td>';
   wrap.innerHTML =
     nameCell +
     seriesCell +
@@ -228,7 +234,6 @@ function entityRow(entity, locked, series) {
     if (seriesCellEl) seriesCellEl.textContent = seriesDisplay(entity.seriesKey, series);
   }
   fillLastEdited(wrap, entity.lastEditorName);
-  var live = entity.importAction === 'update';
   var nameInput = wrap.querySelector('[data-field="name"]');
   if (nameInput) {
     nameInput.value = entity.name;
@@ -303,10 +308,12 @@ window.krtaDraftEditor = function () {
     var pendingValue = pending ? pending.value : '';
     var name = nameInput ? nameInput.value : entity.name;
     var seriesLabel = seriesInput ? seriesInput.value : '';
-    var pendingDelete = row.classList.contains('removed');
+    var seriesDirty = entity.type === 'character'
+      && seriesLabel.trim() !== seriesDisplay(entity.seriesKey, state.series);
+    var pendingDelete = !!row.dataset.userRemoved;
     var dirty = pendingDelete
       || name.trim() !== entity.name
-      || (entity.type === 'character' && seriesLabel.trim() !== seriesDisplay(entity.seriesKey, state.series))
+      || seriesDirty
       || pendingValue.trim() !== ''
       || !aliasesEqual(aliases, entity.aliases);
     if (!dirty) return null;
@@ -315,6 +322,7 @@ window.krtaDraftEditor = function () {
       key: key,
       name: name,
       seriesLabel: seriesLabel,
+      seriesDirty: seriesDirty,
       aliases: aliases,
       removed: collectRemovedAliases(row),
       pending: pendingValue,
@@ -341,7 +349,7 @@ window.krtaDraftEditor = function () {
       && seriesInput.value.trim() !== seriesDisplay(entity.seriesKey, state.series));
     var aliasDirty = !!(entity && ((pending && pending.value.trim() !== '')
       || !aliasesEqual(aliases, entity.aliases)));
-    var pendingDelete = row.classList.contains('removed');
+    var pendingDelete = !!row.dataset.userRemoved || !!row.dataset.cascadeRemoved;
     var conflicted = !!row.querySelector('[data-conflict]');
     var dirty = !!(pendingDelete || nameDirty || seriesDirty || aliasDirty);
     var deleteBtn = row.querySelector('[data-delete]');
@@ -418,9 +426,15 @@ window.krtaDraftEditor = function () {
       });
     }
     if (pending) pending.value = edit.pending;
-    if (edit.pendingDelete) match.classList.add('removed');
-    else match.classList.remove('removed');
+    if (edit.pendingDelete) {
+      match.classList.add('removed');
+      match.dataset.userRemoved = '1';
+    } else {
+      match.classList.remove('removed');
+      delete match.dataset.userRemoved;
+    }
     syncSaveButton(match);
+    if (edit.type === 'series') syncCascadeDeletes();
   }
   function historyEntries(type, key) {
     return eventLog.filter(function (entry) {
@@ -530,6 +544,26 @@ window.krtaDraftEditor = function () {
     });
     return match;
   }
+  function syncCascadeDeletes() {
+    var doomed = {};
+    document.querySelectorAll('tr.row').forEach(function (row) {
+      if (row.dataset.type === 'series' && row.dataset.userRemoved) doomed[row.dataset.key] = true;
+    });
+    document.querySelectorAll('tr.row').forEach(function (row) {
+      if (row.dataset.type !== 'character') return;
+      var entity = findEntity('character', row.dataset.key);
+      var seriesKey = entity ? entity.seriesKey : row.dataset.seriesKey;
+      var cascade = !!(seriesKey && doomed[seriesKey]);
+      if (cascade) {
+        row.classList.add('removed');
+        row.dataset.cascadeRemoved = '1';
+      } else if (row.dataset.cascadeRemoved) {
+        delete row.dataset.cascadeRemoved;
+        if (!row.dataset.userRemoved) row.classList.remove('removed');
+      }
+      syncSaveButton(row);
+    });
+  }
   function clearConflicts(row) {
     if (!row) return;
     row.querySelectorAll('[data-conflict]').forEach(function (cell) {
@@ -606,6 +640,7 @@ window.krtaDraftEditor = function () {
         ? 'Someone else changed a field you also edited.'
         : 'Someone else changed fields you also edited.', true);
     }
+    syncCascadeDeletes();
   }
   function render() {
     var seriesList = document.getElementById('series-list');
@@ -646,6 +681,17 @@ window.krtaDraftEditor = function () {
   }
   async function save(mutation, options) {
     var silent = !!(options && options.silent);
+    var cascadeCount = 0;
+    if (mutation.action === 'delete' && mutation.type === 'series') {
+      cascadeCount = state.characters.filter(function (item) {
+        return item.seriesKey === mutation.key;
+      }).length;
+      if (!silent && cascadeCount) {
+        showStatus(status, cascadeCount === 1
+          ? 'Saving will delete this series and 1 character.'
+          : 'Saving will delete this series and ' + cascadeCount + ' characters.', false);
+      }
+    }
     var result = await api('/api/v1/drafts/' + state.id + '/entities', {
       method: 'PATCH',
       body: JSON.stringify(mutation)
@@ -678,11 +724,23 @@ window.krtaDraftEditor = function () {
       }
       return { ok: false, body: result.body };
     }
-    if (mutation.action === 'delete') removeEntity(mutation.type, mutation.key);
-    else if (result.body && result.body.entity) replaceEntity(result.body.entity);
+    if (mutation.action === 'delete') {
+      removeEntity(mutation.type, mutation.key);
+      if (mutation.type === 'series') {
+        state.characters.filter(function (item) {
+          return item.seriesKey === mutation.key;
+        }).forEach(function (item) {
+          removeEntity('character', item.key);
+        });
+      }
+    } else if (result.body && result.body.entity) replaceEntity(result.body.entity);
     if (!silent) {
       render();
-      showStatus(status, 'Saved.', false);
+      showStatus(status, cascadeCount
+        ? (cascadeCount === 1
+          ? 'Saved. Deleted this series and 1 character.'
+          : 'Saved. Deleted this series and ' + cascadeCount + ' characters.')
+        : 'Saved.', false);
     }
     return { ok: true, body: result.body };
   }
@@ -735,8 +793,28 @@ window.krtaDraftEditor = function () {
     if (descriptionDirty()) await commitDescription();
     var pending = dirtyRows().filter(function (item) {
       var row = findRow(item.edit.type, item.edit.key);
-      return !row || !row.querySelector('[data-conflict]');
+      if (row && row.querySelector('[data-conflict]')) return false;
+      if (item.edit.type === 'character' && row && row.dataset.cascadeRemoved && !row.dataset.userRemoved) {
+        return false;
+      }
+      return true;
     });
+    var cascadeDeletes = pending.filter(function (item) {
+      return item.edit.type === 'series' && item.edit.pendingDelete;
+    });
+    if (cascadeDeletes.length) {
+      var cascadeCount = 0;
+      cascadeDeletes.forEach(function (item) {
+        cascadeCount += state.characters.filter(function (entity) {
+          return entity.seriesKey === item.edit.key;
+        }).length;
+      });
+      if (cascadeCount) {
+        showStatus(status, cascadeCount === 1
+          ? 'Saving will delete this series and 1 character.'
+          : 'Saving will delete this series and ' + cascadeCount + ' characters.', false);
+      }
+    }
     var failed = [];
     var rebased = [];
     var saved = 0;
@@ -754,7 +832,7 @@ window.krtaDraftEditor = function () {
         key: item.edit.key,
         expectedRevision: item.revision,
         name: item.edit.name,
-        seriesKey: item.edit.seriesLabel,
+        seriesKey: item.edit.seriesDirty ? item.edit.seriesLabel : undefined,
         aliases: item.edit.aliases
       }, { silent: true });
       if (result.ok) saved += 1;
@@ -934,20 +1012,29 @@ window.krtaDraftEditor = function () {
       }
       var name = row.querySelector('[data-field="name"]');
       var seriesKey = row.querySelector('[data-field="seriesKey"]');
+      var entity = findEntity(type, key);
+      var seriesDirty = !!(entity && entity.type === 'character' && seriesKey
+        && seriesKey.value.trim() !== seriesDisplay(entity.seriesKey, state.series));
       await save({
         type: type,
         action: 'update',
         key: key,
         expectedRevision: revision,
         name: name ? name.value : '',
-        seriesKey: seriesKey ? seriesKey.value : undefined,
+        seriesKey: seriesDirty ? seriesKey.value : undefined,
         aliases: collectAliases(row.querySelector('.aliases'))
       });
       return;
     }
     if (target.dataset.delete) {
-      if (row.classList.contains('removed')) row.classList.remove('removed');
-      else row.classList.add('removed');
+      if (row.dataset.userRemoved) {
+        delete row.dataset.userRemoved;
+        row.classList.remove('removed');
+      } else {
+        row.dataset.userRemoved = '1';
+        row.classList.add('removed');
+      }
+      if (row.dataset.type === 'series') syncCascadeDeletes();
       syncSaveButton(row);
     }
   });

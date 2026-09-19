@@ -191,6 +191,50 @@ describe('draft mutation', () => {
     })
   })
 
+  it('rejects adding a character to a series that is not on the draft', () => {
+    try {
+      applyDraftMutation(
+        null,
+        { type: 'character', action: 'add', name: 'Hero', seriesKey: 'Missing' },
+        new Set(),
+        '2',
+        'second',
+        [{ key: 'new-series', name: 'New Series' }]
+      )
+      throw new Error('expected missing series')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'That series is not on this draft.'
+      })
+    }
+  })
+
+  it('rejects deleting a live imported row', () => {
+    try {
+      applyDraftMutation(
+        series(3, { importAction: 'update', baseAliases: ['Alt'] }),
+        {
+          type: 'series',
+          action: 'delete',
+          key: 'new-series',
+          expectedRevision: 3
+        },
+        new Set(['new-series']),
+        '2',
+        'second'
+      )
+      throw new Error('expected live delete')
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftError)
+      expect(error).toMatchObject({
+        code: 'INVALID_INPUT',
+        message: 'This live row cannot be deleted.'
+      })
+    }
+  })
+
   it('rejects removing an imported alias', () => {
     try {
       applyDraftMutation(

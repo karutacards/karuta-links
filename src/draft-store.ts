@@ -454,6 +454,40 @@ export async function mutateDraftEntity(
          WHERE draft_id = ? AND entity_type = ? AND entity_key = ? AND revision = ?`
       ).bind(draftId, current.type, current.key, current.revision)
     )
+    if (current.type === 'series') {
+      const childRows = await db.prepare(
+        `SELECT entity_type, entity_key, name, series_key, aliases, import_action,
+                base_aliases, revision, last_editor_id, last_editor_name
+         FROM draft_entities
+         WHERE draft_id = ? AND entity_type = 'character' AND series_key = ?`
+      ).bind(draftId, current.key).all<EntityRow>()
+      const seriesRefs = [{ key: current.key, name: current.name }]
+      for (const row of childRows.results ?? []) {
+        const child = rowToEntity(row)
+        statements.push(
+          db.prepare(
+            `DELETE FROM draft_entities
+             WHERE draft_id = ? AND entity_type = ? AND entity_key = ?`
+          ).bind(draftId, child.type, child.key)
+        )
+        statements.push(
+          db.prepare(
+            `INSERT INTO draft_audit
+             (draft_id, entity_type, entity_key, action, before_json, after_json,
+              discord_id, username, created_at)
+             VALUES (?, ?, ?, 'delete', ?, NULL, ?, ?, ?)`
+          ).bind(
+            draftId,
+            child.type,
+            child.key,
+            entityPayload(child, seriesRefs),
+            editorId,
+            editorName,
+            now
+          )
+        )
+      }
+    }
   } else if (result.entity && result.action === 'add') {
     statements.push(
       db.prepare(

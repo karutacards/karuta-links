@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { draftKey, parseDraftCatalog, uniqueDraftKey } from './draft-catalog'
+import { draftKey, parseDraftCatalog, resolveDraftSeriesKey, uniqueDraftKey } from './draft-catalog'
 import { DraftError } from './draft-types'
 
 describe('draft catalog', () => {
+  it('resolves a series only when it is already on the draft', () => {
+    const series = [
+      { key: 'new-series', name: 'New Series' },
+      { key: 'new-series-2', name: 'New Series!' }
+    ]
+    expect(resolveDraftSeriesKey('New Series!', series)).toBe('new-series-2')
+    expect(resolveDraftSeriesKey('Jujutsu Kaisen', series)).toBe('')
+  })
+
   it('builds keys the same way as the importer', () => {
     expect(draftKey('New Series')).toBe('new-series')
     expect(uniqueDraftKey('New Series', new Set(['new-series']))).toBe('new-series-2')
@@ -59,11 +68,12 @@ describe('draft catalog', () => {
     })
   })
 
-  it('keeps an unknown series value as a slug', () => {
-    expect(parseDraftCatalog({
+  it('rejects a character whose series is not on the draft', () => {
+    expect(() => parseDraftCatalog({
       characters: [{ name: 'Hero', seriesKey: 'Jujutsu Kaisen' }]
-    })).toMatchObject({
-      characters: [{ key: 'hero', seriesKey: 'jujutsu-kaisen' }]
-    })
+    })).toThrow(DraftError)
+    expect(() => parseDraftCatalog({
+      characters: [{ name: 'Hero', seriesKey: 'Jujutsu Kaisen' }]
+    })).toThrow('Each character needs a series.')
   })
 })
