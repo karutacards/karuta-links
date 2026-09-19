@@ -111,7 +111,7 @@ Contest dumps are not ingested over HTTP.
 
 Pages are public. Content-dump writes require the ingest token. A hard production publish from karuta-admin POSTs a dump. Soft and silent publishes skip that POST.
 
-Discord OAuth can issue a signed session cookie (`identify` only). It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes require a session. A missing cookie starts OAuth and returns to `/drafts/import` or `/drafts/{id}`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
+Discord OAuth can issue a signed session cookie (`identify` only). The cookie includes a generation. Raising that number invalidates every outstanding session. It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes require a session. A missing cookie starts OAuth and returns to `/drafts/import` or `/drafts/{id}`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
 
 ## Collaborative drafts
 

@@ -4,6 +4,7 @@ export const SESSION_COOKIE = 'session'
 export const STATE_COOKIE = 'oauth_state'
 export const NEXT_COOKIE = 'oauth_next'
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 30
+export const SESSION_GENERATION = 1
 export const STATE_MAX_AGE = 300
 export const NEXT_MAX_AGE = 600
 
@@ -13,6 +14,7 @@ export interface Session {
   avatar: string
   issuedAt: number
   sessionId: string
+  generation: number
 }
 
 export function presentSecret(value: string | undefined): value is string {
@@ -115,7 +117,8 @@ export async function verifySession(
       typeof parsed.discordId !== 'string' ||
       typeof parsed.username !== 'string' ||
       typeof parsed.issuedAt !== 'number' ||
-      typeof parsed.sessionId !== 'string'
+      typeof parsed.sessionId !== 'string' ||
+      parsed.generation !== SESSION_GENERATION
     ) {
       return null
     }
@@ -124,7 +127,8 @@ export async function verifySession(
       username: parsed.username,
       avatar: parseDiscordAvatar(parsed.avatar),
       issuedAt: parsed.issuedAt,
-      sessionId: parsed.sessionId
+      sessionId: parsed.sessionId,
+      generation: SESSION_GENERATION
     }
   } catch {
     return null
@@ -193,6 +197,7 @@ export function newSession(discordId: string, username: string, avatar = ''): Se
     username,
     avatar: parseDiscordAvatar(avatar),
     issuedAt: Date.now(),
-    sessionId: crypto.randomUUID()
+    sessionId: crypto.randomUUID(),
+    generation: SESSION_GENERATION
   }
 }

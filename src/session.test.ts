@@ -34,10 +34,11 @@ describe('session', () => {
     expect(session.avatar).toBe('')
   })
 
-  it('accepts a legacy session cookie that has no avatar field', async () => {
+  it('rejects a cookie from an earlier session generation', async () => {
     const payload = JSON.stringify({
       discordId: '1',
       username: 'tester',
+      avatar: '',
       issuedAt: 1,
       sessionId: 'legacy'
     })
@@ -52,11 +53,7 @@ describe('session', () => {
     const hex = Array.from(new Uint8Array(signature))
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('')
-    await expect(verifySession(`${payload}.${hex}`, SECRET)).resolves.toMatchObject({
-      discordId: '1',
-      username: 'tester',
-      avatar: ''
-    })
+    await expect(verifySession(`${payload}.${hex}`, SECRET)).resolves.toBeNull()
   })
 
   it('rejects a tampered payload', async () => {
