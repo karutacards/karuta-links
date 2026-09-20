@@ -12,7 +12,7 @@ import {
 describe('report og thumbnail', () => {
   it('sets a summary-card thumbnail and no favicon', () => {
     const page = renderReportStart()
-    expect(page).toContain(`property="og:image" content="${REPORT_OG_URL}?v=new"`)
+    expect(page).toContain(`property="og:image" content="${REPORT_OG_URL}?v=badge"`)
     expect(page).toContain('name="twitter:card" content="summary"')
     expect(page).not.toContain('rel="icon"')
     expect(page).not.toContain('favicon')

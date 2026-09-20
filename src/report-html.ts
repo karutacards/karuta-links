@@ -34,7 +34,7 @@ function headed(heading: string, rest: string, refreshTo?: string): string {
   )
 }
 
-// TODO: Remove the ?v=new og:image query after Discord's crawler shows the current thumbnail.
+// TODO: Remove the ?v=badge og:image query after Discord's crawler shows the current thumbnail.
 function layout(body: string, refreshTo?: string): string {
   const refresh = refreshTo
     ? `\n  <meta http-equiv="refresh" content="0;url=${escapeHtml(refreshTo)}">`
@@ -48,7 +48,7 @@ function layout(body: string, refreshTo?: string): string {
   <meta name="description" content="${escapeHtml(REPORT_EMBED_DESCRIPTION)}">
   <meta property="og:title" content="${escapeHtml(REPORT_EMBED_TITLE)}">
   <meta property="og:description" content="${escapeHtml(REPORT_EMBED_DESCRIPTION)}">
-  <meta property="og:image" content="${escapeHtml(`${REPORT_OG_URL}?v=new`)}">
+  <meta property="og:image" content="${escapeHtml(`${REPORT_OG_URL}?v=badge`)}">
   <meta property="og:image:type" content="${escapeHtml(REPORT_OG_CONTENT_TYPE)}">
   <meta property="og:image:width" content="${REPORT_OG_WIDTH}">
   <meta property="og:image:height" content="${REPORT_OG_HEIGHT}">

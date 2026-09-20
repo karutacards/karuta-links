@@ -2,9 +2,9 @@
 
 Source art and generation prompts for the `/report` Open Graph thumbnail. The Worker serves a copy of the 256-pixel lossless WebP from `src/report-og.webp`. These files are not bundled into the Worker.
 
-Fur matches the original Karuta dog icon. Yellow hit markers stay.
+The thumbnail is the gold hat badge with the burgundy head silhouette.
 
-- [Master PNG](report-matched-master.png) (1,254 by 1,254)
-- [256 PNG](report-matched-256.png)
-- [256 WebP](report-matched-256.webp)
-- [Palette and prompts](MATCHED-PALETTE.md)
+- [Master PNG](cop-hat-badge-master.png) (1,254 by 1,254)
+- [256 PNG](cop-hat-badge-256.png)
+- [256 WebP](cop-hat-badge-256.webp)
+- [Prompt](HAT-BADGE-PROMPT.md)
