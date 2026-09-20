@@ -33,6 +33,7 @@ import {
   unhideDraft,
   unlockDraft
 } from './draft-store'
+import { DRAFT_WRITE_PERIOD_SEC, limitDraftWrite } from './draft-rate'
 import { DraftError, type DraftEntityType, type DraftRecord } from './draft-types'
 import {
   canAdminDrafts,
@@ -81,11 +82,27 @@ function json(body: unknown, status = 200, extra: Record<string, string> = {}): 
 }
 
 function draftErrorResponse(error: DraftError): Response {
+  const extra: Record<string, string> = {}
+  if (error.status === 429) {
+    extra['retry-after'] = String(DRAFT_WRITE_PERIOD_SEC)
+  }
   return json({
     error: error.message,
     code: error.code,
     entity: error.entity
-  }, error.status)
+  }, error.status, extra)
+}
+
+async function rejectDraftWriteIfLimited(env: Env, discordId: string): Promise<Response | null> {
+  try {
+    await limitDraftWrite(env, discordId)
+    return null
+  } catch (error) {
+    if (error instanceof DraftError) {
+      return draftErrorResponse(error)
+    }
+    throw error
+  }
 }
 
 function accessHtml(decision: AccessDenied): Response {
@@ -350,6 +367,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     const lengthHeader = c.req.header('content-length')
     if (lengthHeader && Number(lengthHeader) > MAX_DRAFT_BYTES) {
       return json({ error: 'Payload too large.', code: 'TOO_LARGE' }, 413)
@@ -398,6 +419,10 @@ export function registerDrafts(
     const auth = await requireDraftApiIdentity(c.req.raw, c.env)
     if (auth instanceof Response) {
       return auth
+    }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
     }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
@@ -506,6 +531,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     const id = parsePositiveDraftId(c.req.param('id'))
     const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
     if (visible instanceof Response) {
@@ -587,6 +616,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     const id = parsePositiveDraftId(c.req.param('id'))
     const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
     if (visible instanceof Response) {
@@ -624,6 +657,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
     }
@@ -657,6 +694,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
     }
@@ -689,6 +730,10 @@ export function registerDrafts(
     const auth = await requireDraftApiIdentity(c.req.raw, c.env)
     if (auth instanceof Response) {
       return auth
+    }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
     }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
@@ -741,6 +786,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
     }
@@ -774,6 +823,10 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
+    }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
     }
@@ -806,6 +859,10 @@ export function registerDrafts(
     const auth = await requireDraftApiIdentity(c.req.raw, c.env)
     if (auth instanceof Response) {
       return auth
+    }
+    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
+    if (limited) {
+      return limited
     }
     if (!canAdminDrafts(auth.session.discordId)) {
       return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)

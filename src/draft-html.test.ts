@@ -248,4 +248,24 @@ describe('draft HTML', () => {
     expect(() => new Function(script)).not.toThrow()
     expect(script).toContain("join('\\n')")
   })
+
+  it('escapes description markup in HTML and JSON', () => {
+    const draft: DraftRecord = {
+      id: 2,
+      createdAt: 1,
+      updatedAt: 2,
+      lockedAt: null,
+      lockedBy: null,
+      hiddenAt: null,
+      accessOverride: null,
+      description: '</textarea><img src=x>',
+      series: [],
+      characters: []
+    }
+    const page = renderDraftEditor(draft, { canAdmin: true, username: 'craig' })
+    expect(page).toContain('&lt;/textarea&gt;')
+    expect(page).not.toContain('</textarea><img src=x>')
+    expect(page).toContain('\\u003c/textarea')
+    expect(page).toContain("ch === '<' || ch === '>'")
+  })
 })

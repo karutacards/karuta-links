@@ -98,6 +98,9 @@ export function cleanDraftAliases(raw: unknown): string[] {
     if (!alias) {
       continue
     }
+    if (alias.includes('|')) {
+      throw new DraftError('INVALID_INPUT', 'An alias cannot contain |.', 400)
+    }
     if (alias.length > DRAFT_MAX_ALIAS) {
       throw new DraftError('INVALID_INPUT', 'An alias is too long.', 400)
     }

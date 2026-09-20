@@ -109,4 +109,23 @@ describe('draft catalog', () => {
       characters: [{ name: 'Hero', seriesKey: 'Jujutsu Kaisen' }]
     })).toThrow('Each character needs a series.')
   })
+
+  it('rejects markup in names and aliases', () => {
+    expect(() => parseDraftCatalog({
+      series: [{ name: '<script>alert(1)</script>' }]
+    })).toThrow(/cannot contain < or >/)
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Safe', aliases: ['<b>x</b>'] }]
+    })).toThrow(/cannot contain < or >/)
+  })
+
+  it('rejects a pipe in an alias and more than 50 aliases', () => {
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Safe', aliases: ['A|B'] }]
+    })).toThrow('An alias cannot contain |.')
+    const aliases = Array.from({ length: 51 }, (_, index) => 'Alias ' + String(index + 1))
+    expect(() => parseDraftCatalog({
+      series: [{ name: 'Safe', aliases }]
+    })).toThrow('An entity cannot have that many aliases.')
+  })
 })

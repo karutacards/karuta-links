@@ -9,6 +9,7 @@ function inlineClientFn(fn: { toString(): string }): string {
 export const DRAFT_CLIENT_SCRIPT = 'var FONT_CODE_POINTS = ' + JSON.stringify(DRAFT_FONT_CODE_POINTS) + ';\nvar rebaseDraftPending = ' + inlineClientFn(rebaseDraftPending) + ';\nvar lastEventIdForSave = ' + inlineClientFn(lastEventIdForSave) + ';\nvar groupDraftActivity = ' + inlineClientFn(groupDraftActivity) + ';\nvar liveActivityIds = ' + inlineClientFn(liveActivityIds) + ';\nvar currentEntityHistory = ' + inlineClientFn(currentEntityHistory) + ';\n' + `
 var MAX_NAME = 200;
 var MAX_ALIAS = 200;
+var MAX_ALIASES = 50;
 var FONT_GLYPHS = {};
 FONT_CODE_POINTS.forEach(function (code) {
   FONT_GLYPHS[String.fromCodePoint(code)] = true;
@@ -20,12 +21,18 @@ function keepDraftFontText(value) {
     var point = text.codePointAt(i);
     var ch = String.fromCodePoint(point);
     i += ch.length;
+    if (ch === '<' || ch === '>') continue;
     if (FONT_GLYPHS[ch]) next += ch;
   }
   return next;
 }
 function draftFontError(value, kind) {
   var text = String(value || '').normalize('NFC');
+  if (text.indexOf('<') !== -1 || text.indexOf('>') !== -1) {
+    return kind === 'alias'
+      ? 'An alias cannot contain < or >.'
+      : 'Name cannot contain < or >.';
+  }
   if (text.indexOf('  ') !== -1) {
     return kind === 'alias'
       ? 'An alias cannot contain repeated spaces.'
@@ -120,6 +127,15 @@ function markAliasRemoved(chip) {
   chip.setAttribute('data-alias-removed', '1');
   chip.setAttribute('aria-label', 'Restore alias ' + (chip.getAttribute('data-alias') || ''));
 }
+function liveAliasCount(list) {
+  var n = 0;
+  if (!list) return 0;
+  list.querySelectorAll('[data-alias]').forEach(function (node) {
+    if (aliasChipRemoved(node) || aliasChipRemoved(node.closest('li'))) return;
+    n += 1;
+  });
+  return n;
+}
 function addAliasChip(list, raw, status, removable) {
   var alias = String(raw || '').trim();
   if (!alias) return false;
@@ -137,18 +153,24 @@ function addAliasChip(list, raw, status, removable) {
     return false;
   }
   var exists = false;
-  var restored = false;
+  var removed = null;
   list.querySelectorAll('[data-alias]').forEach(function (node) {
     if (aliasKey(node.getAttribute('data-alias')) !== aliasKey(alias)) return;
     if (aliasChipRemoved(node) || aliasChipRemoved(node.closest('li'))) {
-      restoreAliasChip(node);
-      restored = true;
+      removed = node;
       return;
     }
     exists = true;
   });
-  if (restored) return true;
   if (exists) return false;
+  if (liveAliasCount(list) >= MAX_ALIASES) {
+    showStatus(status, 'An entity cannot have that many aliases.', true);
+    return false;
+  }
+  if (removed) {
+    restoreAliasChip(removed);
+    return true;
+  }
   var item = document.createElement('li');
   if (removable === false) {
     item.className = 'alias-chip';
@@ -786,7 +808,9 @@ window.krtaDraftEditor = function () {
       var name = reviewVoterName(person.username);
       var img = document.createElement('img');
       img.className = 'presence-avatar';
-      img.src = person.avatarUrl || '';
+      img.src = String(person.avatarUrl || '').indexOf('https://cdn.discordapp.com/') === 0
+        ? person.avatarUrl
+        : '';
       img.alt = name;
       img.title = name;
       img.width = 22;
@@ -1164,6 +1188,10 @@ window.krtaDraftEditor = function () {
         return { ok: false, body: { error: seriesFont, code: 'INVALID_INPUT' } };
       }
       var saveAliases = mutation.aliases || [];
+      if (saveAliases.length > MAX_ALIASES) {
+        if (!silent) showStatus(status, 'An entity cannot have that many aliases.', true);
+        return { ok: false, body: { error: 'An entity cannot have that many aliases.', code: 'INVALID_INPUT' } };
+      }
       for (var ai = 0; ai < saveAliases.length; ai++) {
         var saveAlias = String(saveAliases[ai] || '').trim();
         if (saveAlias.length > MAX_ALIAS) {
@@ -1469,6 +1497,11 @@ window.krtaDraftEditor = function () {
         return aliasKey(value) === aliasKey(alias);
       }));
       if (aliasChipRemoved(aliasChip)) {
+        var aliasList = aliasChip.closest('[data-alias-list]') || (aliasItem && aliasItem.parentElement);
+        if (liveAliasCount(aliasList) >= MAX_ALIASES) {
+          showStatus(status, 'An entity cannot have that many aliases.', true);
+          return;
+        }
         restoreAliasChip(aliasChip);
       } else if (saved) {
         markAliasRemoved(aliasChip);
@@ -1640,7 +1673,9 @@ window.krtaDraftEditor = function () {
   document.addEventListener('input', function (event) {
     var field = event.target;
     if (!(field instanceof HTMLElement)) return;
-    if (field.id === 'draft-description') {
+    if (field.id === 'draft-description' && 'value' in field) {
+      var note = keepDraftFontText(field.value);
+      if (note !== field.value) field.value = note;
       syncDescriptionPending();
       return;
     }

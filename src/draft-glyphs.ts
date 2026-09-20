@@ -24,24 +24,43 @@ export function isDraftFontGlyph(character: string): boolean {
   return FONT_GLYPHS.has(character)
 }
 
-export function draftFontError(value: string, kind: 'name' | 'alias'): string | null {
+export type DraftTextKind = 'name' | 'alias' | 'description'
+
+function draftTextError(kind: DraftTextKind, angle: boolean, spaces: boolean): string {
+  if (angle) {
+    if (kind === 'alias') return 'An alias cannot contain < or >.'
+    if (kind === 'description') return 'The draft description cannot contain < or >.'
+    return 'Name cannot contain < or >.'
+  }
+  if (spaces) {
+    if (kind === 'alias') return 'An alias cannot contain repeated spaces.'
+    if (kind === 'description') return 'The draft description cannot contain repeated spaces.'
+    return 'Name cannot contain repeated spaces.'
+  }
+  if (kind === 'alias') return 'An alias contains characters the Karuta font cannot display.'
+  if (kind === 'description') {
+    return 'The draft description contains characters the Karuta font cannot display.'
+  }
+  return 'Name contains characters the Karuta font cannot display.'
+}
+
+export function draftFontError(value: string, kind: DraftTextKind): string | null {
   const text = value.normalize('NFC')
+  if (text.includes('<') || text.includes('>')) {
+    return draftTextError(kind, true, false)
+  }
   if (text.includes('  ')) {
-    return kind === 'alias'
-      ? 'An alias cannot contain repeated spaces.'
-      : 'Name cannot contain repeated spaces.'
+    return draftTextError(kind, false, true)
   }
   for (const character of text) {
     if (!FONT_GLYPHS.has(character)) {
-      return kind === 'alias'
-        ? 'An alias contains characters the Karuta font cannot display.'
-        : 'Name contains characters the Karuta font cannot display.'
+      return draftTextError(kind, false, false)
     }
   }
   return null
 }
 
-export function assertDraftFontText(value: string, kind: 'name' | 'alias'): string {
+export function assertDraftFontText(value: string, kind: DraftTextKind): string {
   const text = value.normalize('NFC')
   const error = draftFontError(text, kind)
   if (error) {
@@ -53,6 +72,7 @@ export function assertDraftFontText(value: string, kind: 'name' | 'alias'): stri
 export function keepDraftFontText(value: string): string {
   let next = ''
   for (const character of value.normalize('NFC')) {
+    if (character === '<' || character === '>') continue
     if (FONT_GLYPHS.has(character)) next += character
   }
   return next

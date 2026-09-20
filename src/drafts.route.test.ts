@@ -6,6 +6,7 @@ import { createSessionCookie, newSession, parseCookies, NEXT_COOKIE } from './se
 function testEnv(overrides: Partial<Env> = {}): Env {
   return {
     INGEST_TOKEN: 'test-ingest',
+    DRAFT_WRITE: { limit: async () => ({ success: true }) },
     DB: {} as D1Database,
     IMAGES: {} as R2Bucket,
     DISCORD_CLIENT_ID: 'test-client',
@@ -92,5 +93,36 @@ describe('draft routes', () => {
     )
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ code: 'UNAVAILABLE' })
+  })
+
+  it('rate-limits draft writes', async () => {
+    const encoded = new TextEncoder().encode(JSON.stringify([]))
+    const bytes = await new Response(
+      new Blob([encoded]).stream().pipeThrough(new CompressionStream('gzip'))
+    ).arrayBuffer()
+    const cookie = await createSessionCookie(newSession('1', 'tester'), 'test-session-secret', false)
+    const response = await app.request(
+      'http://127.0.0.1:8787/api/v1/drafts/3/entities',
+      {
+        method: 'PATCH',
+        headers: {
+          Cookie: cookie.split(';')[0] ?? '',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ type: 'series', action: 'add', name: 'Safe' })
+      },
+      testEnv({
+        DRAFT_WRITE: { limit: async () => ({ success: false }) },
+        KARUTA_DATA: {
+          get: async () => ({ arrayBuffer: async () => bytes })
+        } as unknown as R2Bucket
+      })
+    )
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('10')
+    expect(await response.json()).toMatchObject({
+      code: 'RATE_LIMITED',
+      error: 'Too many draft actions. Wait a few seconds.'
+    })
   })
 })

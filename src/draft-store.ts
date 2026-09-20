@@ -1,4 +1,5 @@
 import { parseDraftCatalog } from './draft-catalog'
+import { assertDraftFontText } from './draft-glyphs'
 import { discordAvatarUrl, parseDiscordAvatar } from './discord-avatar'
 import { sortDraftEntities } from './draft-sort'
 import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
@@ -999,7 +1000,9 @@ export async function setDraftAccessConfig(
 }
 
 export function normalizeDraftDescription(value: string): string {
-  return value.replace(/^\s+|\s+$/g, '')
+  const next = value.replace(/^\s+|\s+$/g, '')
+  if (!next) return ''
+  return assertDraftFontText(next, 'description')
 }
 
 export async function setDraftDescription(

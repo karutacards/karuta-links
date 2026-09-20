@@ -32,3 +32,12 @@ describe('draft font glyphs', () => {
     )
   })
 })
+  it('rejects angle brackets in stored draft text', () => {
+    expect(() => assertDraftFontText('<script>', 'name')).toThrow('Name cannot contain < or >.')
+    expect(() => assertDraftFontText('a>b', 'alias')).toThrow('An alias cannot contain < or >.')
+    expect(() => assertDraftFontText('<img>', 'description')).toThrow(
+      'The draft description cannot contain < or >.'
+    )
+    expect(keepDraftFontText('Hello <world>')).toBe('Hello world')
+  })
+

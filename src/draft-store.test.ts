@@ -328,6 +328,16 @@ describe('draft events store', () => {
     expect(locked.queries.some((query) => query.sql.includes('DELETE FROM draft_reviews'))).toBe(true)
   })
 
+  it('rejects markup in the description', async () => {
+    const { db } = mockDb({
+      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: '' },
+      entities: []
+    })
+    await expect(setDraftDescription(db, 2, '<script>alert(1)</script>', '1', 'craig', 50)).rejects.toMatchObject({
+      code: 'INVALID_INPUT'
+    })
+  })
+
   it('writes a describe audit row only when the description changes', async () => {
     const changed = mockDb({
       draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: '' },

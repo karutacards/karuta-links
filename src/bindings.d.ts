@@ -7,4 +7,5 @@ interface __BaseEnv_Env {
   KARUTA_DATA?: R2Bucket
   GITHUB_DISPATCH_TOKEN?: string
   CATALOG_DISPATCH_REPO?: string
+  DRAFT_WRITE: RateLimit
 }

@@ -5,6 +5,7 @@ interface __BaseEnv_Env {
 	IMAGES: R2Bucket;
 	DB: D1Database;
 	INGEST_TOKEN: string;
+	DRAFT_WRITE: RateLimit;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
