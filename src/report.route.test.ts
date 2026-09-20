@@ -15,7 +15,6 @@ vi.mock('./firestore', async (importOriginal) => {
 function testEnv(overrides: Partial<Env> = {}): Env {
   return {
     INGEST_TOKEN: 'test-ingest',
-    DRAFT_WRITE: { limit: async () => ({ success: true }) },
     DB: {} as D1Database,
     IMAGES: {} as R2Bucket,
     DISCORD_CLIENT_ID: 'test-client',
