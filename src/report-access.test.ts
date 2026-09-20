@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { draftsConfig } from './drafts-config'
 import {
   evaluateReportAccess,
   REPORT_ACCESS_DENIED_MESSAGE,
@@ -58,13 +57,16 @@ describe('report access', () => {
     })
   })
 
-  it('lets an admin skip the credential bars after the ban check', async () => {
-    const adminId = draftsConfig.adminIds[0]
-    expect(adminId).toBeTruthy()
-    await expect(evaluateReportAccess(adminId ?? '', {
+  it('does not skip credential bars for a drafts admin id', async () => {
+    await expect(evaluateReportAccess('141431182792458241', {
       ...loaders,
       getPlayerStats: async () => ({ drops: 0, grabs: 0, purchases: 0 })
-    })).resolves.toEqual({ ok: true })
+    })).resolves.toEqual({
+      ok: false,
+      status: 403,
+      code: 'FORBIDDEN',
+      message: REPORT_ACCESS_DENIED_MESSAGE
+    })
   })
 
   it('fails closed when the ban list cannot be read', async () => {

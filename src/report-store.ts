@@ -1,7 +1,7 @@
 import type { ReportPayload } from './report-validate'
 
-export const REPORT_RATE_LIMIT = 3
-export const REPORT_RATE_WINDOW_MS = 24 * 60 * 60 * 1000
+export const REPORT_RATE_LIMIT = 10
+export const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000
 
 export type ReportRecord = {
   id: number
@@ -15,8 +15,8 @@ export type ReportRecord = {
   cardCodes: string[]
   dyeCodes: string[]
   idolCodes: string[]
+  offenseDates: string[]
   notes: string
-  acknowledged: true
 }
 
 export async function isReportBanned(db: D1Database, discordId: string): Promise<boolean> {
@@ -55,8 +55,8 @@ export async function insertReport(
       `INSERT INTO reports (
          created_at, reporter_id, reporter_username, reason,
          user_ids, server_ids, channel_ids,
-         card_codes, dye_codes, idol_codes, notes, acknowledged
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+         card_codes, dye_codes, idol_codes, offense_dates, notes
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       createdAt,
@@ -69,6 +69,7 @@ export async function insertReport(
       JSON.stringify(payload.cardCodes),
       JSON.stringify(payload.dyeCodes),
       JSON.stringify(payload.idolCodes),
+      JSON.stringify(payload.offenseDates),
       payload.notes
     )
     .run()
@@ -88,7 +89,7 @@ export async function insertReport(
     cardCodes: payload.cardCodes,
     dyeCodes: payload.dyeCodes,
     idolCodes: payload.idolCodes,
-    notes: payload.notes,
-    acknowledged: true
+    offenseDates: payload.offenseDates,
+    notes: payload.notes
   }
 }

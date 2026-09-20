@@ -1,10 +1,25 @@
 import { escapeHtml } from './escape'
 import {
+  MAX_CODE_COUNT,
+  MAX_DATE_COUNT,
+  MAX_ID_COUNT,
   MAX_NOTES_LENGTH,
   REPORT_REASON_COPY,
   REPORT_REASONS,
+  EARLIEST_OFFENSE_DATE,
+  emptyReportFields,
+  utcDateString,
   type ReportFields
 } from './report-validate'
+
+function headed(title: string, rest: string): string {
+  return layout(
+    title,
+    `<p class="brand"><a href="https://karuta.com">Karuta</a></p>
+    <h1>${escapeHtml(title)}</h1>
+    ${rest}`
+  )
+}
 
 function layout(title: string, body: string): string {
   return `<!doctype html>
@@ -41,7 +56,7 @@ function layout(title: string, body: string): string {
       color: var(--ink);
     }
     .page {
-      width: min(40rem, calc(100% - 2rem));
+      width: min(46rem, calc(100% - 2rem));
       margin: 0 auto;
       padding:
         max(2.25rem, env(safe-area-inset-top, 0px))
@@ -55,6 +70,14 @@ function layout(title: string, body: string): string {
       font-weight: 700;
       letter-spacing: 0.16em;
       text-transform: uppercase;
+    }
+    .brand a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .brand a:focus-visible {
+      outline: 2px solid var(--karuta);
+      outline-offset: 2px;
     }
     h1 {
       margin: 0;
@@ -124,8 +147,67 @@ function layout(title: string, body: string): string {
     }
     .reason:has(input:focus-visible) { outline: 2px solid var(--karuta); outline-offset: 2px; }
     .fields { display: grid; gap: 1rem; }
+    .id-group {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 0.55rem;
+      align-items: stretch;
+    }
+    .id-brace-col {
+      display: grid;
+      grid-template-columns: 0.75rem auto;
+      align-items: center;
+      column-gap: 0.4rem;
+      margin-top: 1.4rem;
+      margin-bottom: 1.55rem;
+    }
+    .id-brace {
+      align-self: stretch;
+      position: relative;
+      border: 1.5px solid #f4f2f8;
+      border-left: none;
+      border-radius: 0 6px 6px 0;
+    }
+    .id-brace::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: calc(100% + 0.4rem);
+      border-top: 1.5px solid #f4f2f8;
+    }
+    .id-required-label {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    @media (max-width: 40rem) {
+      .id-group { grid-template-columns: 1fr; }
+      .id-brace-col {
+        display: block;
+        margin: 0.45rem 0 0;
+      }
+      .id-brace { display: none; }
+      .id-required-label { white-space: normal; }
+    }
     .field { display: grid; gap: 0.3rem; }
+    .field-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.75rem;
+    }
     .field label { font-size: 0.92rem; font-weight: 700; }
+    .count {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .count.is-warn { color: var(--warn); }
     textarea.codes {
       width: 100%;
       min-height: 3.4rem;
@@ -137,10 +219,64 @@ function layout(title: string, body: string): string {
       font: 0.875rem/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
       resize: vertical;
     }
-    .notes-field {
+    .notes-field, .dates-field {
       margin-top: 0.35rem;
       padding-top: 1rem;
       border-top: 1px solid var(--line);
+    }
+    .date-add {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .date-add input[type="date"] {
+      padding: 0.45rem 0.55rem;
+      border: 1px solid var(--line);
+      border-radius: 0.35rem;
+      background: var(--field);
+      color: var(--ink);
+      font: 0.95rem/1.4 Roboto, "Segoe UI", sans-serif;
+    }
+    .date-add button {
+      padding: 0.45rem 0.8rem;
+      border: 0;
+      border-radius: 0.35rem;
+      background: var(--karuta);
+      color: #fff;
+      font: 700 0.92rem/1 Roboto, "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    .date-add button:focus-visible,
+    .date-add input[type="date"]:focus {
+      outline: 2px solid var(--karuta);
+      outline-offset: 1px;
+    }
+    .date-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 0.45rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .date-list:empty { display: none; }
+    .date-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.55rem;
+      border: 1px solid #4a5ea8;
+      border-radius: 999px;
+      background: var(--karuta-soft);
+      font-size: 0.88rem;
+    }
+    .date-chip button {
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      font: 700 1rem/1 Roboto, "Segoe UI", sans-serif;
+      cursor: pointer;
     }
     textarea.notes {
       width: 100%;
@@ -178,6 +314,7 @@ function layout(title: string, body: string): string {
     }
     .submit:disabled { background: #4a4e6a; color: #9aa0b8; cursor: not-allowed; }
     .submit:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+    a.submit { display: inline-block; text-decoration: none; }
     .needed { margin: 0; color: var(--muted); font-size: 0.95rem; }
     .visually-hidden {
       position: absolute;
@@ -206,31 +343,24 @@ function textarea(
   label: string,
   value: string,
   placeholder: string,
-  hintId: string
+  hintId: string,
+  max: number,
+  describedBy?: string
 ): string {
+  const described = describedBy ? ` aria-describedby="${describedBy}"` : ''
   return `<div class="field">
-        <label for="${name}">${escapeHtml(label)}</label>
-        <textarea id="${name}" name="${name}" class="codes" placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea>
+        <div class="field-head">
+          <label for="${name}">${escapeHtml(label)}</label>
+          <p class="count" id="${name}-count" aria-live="polite">0 / ${max}</p>
+        </div>
+        <textarea id="${name}" name="${name}" class="codes" placeholder="${escapeHtml(placeholder)}"${described}>${escapeHtml(value)}</textarea>
         <p class="hint" id="${hintId}" aria-live="polite"></p>
       </div>`
 }
 
-function emptyFields(): ReportFields {
-  return {
-    reason: '',
-    userIds: '',
-    serverIds: '',
-    channelIds: '',
-    cardCodes: '',
-    dyeCodes: '',
-    idolCodes: '',
-    notes: '',
-    acknowledged: false
-  }
-}
-
 export function renderReportForm(options: { error?: string; fields?: ReportFields } = {}): string {
-  const fields = options.fields ?? emptyFields()
+  const fields = options.fields ?? emptyReportFields()
+  const today = utcDateString()
   const error = options.error
     ? `<p class="error" role="alert">${escapeHtml(options.error)}</p>`
     : ''
@@ -246,39 +376,60 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
   }).join('')
   const ackChecked = fields.acknowledged ? ' checked' : ''
 
-  return layout('Karuta report', `<p class="brand">Karuta</p>
-    <h1>Report a player</h1>
-    <p class="lede">Report cheating in Karuta. Say what happened and who or where we should look. Required sections are marked with an asterisk.</p>
+  return headed('Report a player', `<p class="lede">Report cheating in Karuta. Say what happened and who or where we should look. Required sections are marked with an asterisk.</p>
     ${error}
     <form class="form" id="report-form" method="post" action="/report" novalidate>
       <fieldset class="block">
         <legend class="visually-hidden">Why</legend>
         <h2>Why are you reporting? <abbr class="req" title="required">*</abbr></h2>
-        <p class="help">Pick the closest match. One reason only.</p>
+        <p class="help">Select the reportable offense. If reporting multiple offenses, split up the reports.</p>
         <ul class="reasons">${reasons}</ul>
       </fieldset>
       <fieldset class="block">
         <legend class="visually-hidden">Who or where</legend>
         <h2>Who or where should we look? <abbr class="req" title="required">*</abbr></h2>
-        <p class="help">Add at least one Discord user, server, or channel ID. Each ID is a 17–19 digit snowflake. Turn on Developer Mode, then right-click the user, server, or channel and copy the ID. Separate several IDs with spaces or commas.</p>
-        <div class="fields">
-          ${textarea('user_ids', 'User IDs', fields.userIds, '135694375647838208', 'user-status')}
-          ${textarea('server_ids', 'Server IDs', fields.serverIds, '135694375647838208', 'server-status')}
-          ${textarea('channel_ids', 'Channel IDs', fields.channelIds, '135694375647838208', 'channel-status')}
+        <p class="help">Add at least one Discord user, server, or channel ID. Each ID is a 17–19 digit snowflake. Turn on Developer Mode, then right-click the user, server, or channel and copy the ID. Separate several IDs with spaces or commas. Up to ${MAX_ID_COUNT} IDs in each field.</p>
+        <div class="id-group">
+          <div class="fields">
+          ${textarea('user_ids', 'User IDs', fields.userIds, '135694375647838208', 'user-status', MAX_ID_COUNT, 'id-required')}
+          ${textarea('server_ids', 'Server IDs', fields.serverIds, '135694375647838208', 'server-status', MAX_ID_COUNT, 'id-required')}
+          ${textarea('channel_ids', 'Channel IDs', fields.channelIds, '135694375647838208', 'channel-status', MAX_ID_COUNT, 'id-required')}
+          </div>
+          <div class="id-brace-col">
+            <div class="id-brace" aria-hidden="true"></div>
+            <p class="id-required-label" id="id-required">At least one required</p>
+          </div>
         </div>
       </fieldset>
       <fieldset class="block">
         <legend class="visually-hidden">Evidence</legend>
         <h2>What else helps?</h2>
-        <p class="help">Card codes are 3–8 letters or numbers. Dye codes start with a dollar sign, then 2–8 letters or numbers. Idol codes start with an ampersand, then 2–8 letters or numbers.</p>
+        <p class="help">Card codes are 3–8 letters or numbers. Dye codes start with a dollar sign, then 2–8 letters or numbers. Idol codes start with an ampersand, then 2–8 letters or numbers. Separate several codes with spaces or commas. Up to ${MAX_CODE_COUNT} codes in each field.</p>
         <div class="fields">
-          ${textarea('card_codes', 'Card codes', fields.cardCodes, 'a3f9k', 'card-status')}
-          ${textarea('dye_codes', 'Dye codes', fields.dyeCodes, `${String.fromCharCode(36)}b2x4`, 'dye-status')}
-          ${textarea('idol_codes', 'Idol codes', fields.idolCodes, '&m7q', 'idol-status')}
+          ${textarea('card_codes', 'Card codes', fields.cardCodes, 'a3f9k', 'card-status', MAX_CODE_COUNT)}
+          ${textarea('dye_codes', 'Dye codes', fields.dyeCodes, `${String.fromCharCode(36)}b2x4`, 'dye-status', MAX_CODE_COUNT)}
+          ${textarea('idol_codes', 'Idol codes', fields.idolCodes, '&m7q', 'idol-status', MAX_CODE_COUNT)}
+        </div>
+        <div class="field dates-field">
+          <div class="field-head">
+            <label for="date-pick">Dates</label>
+            <p class="count" id="date-count" aria-live="polite">0 / ${MAX_DATE_COUNT}</p>
+          </div>
+          <p class="help">Dates related to the offending behavior. Add up to ${MAX_DATE_COUNT}.</p>
+          <div class="date-add">
+            <input type="date" id="date-pick" min="${EARLIEST_OFFENSE_DATE}" max="${today}">
+            <button type="button" id="date-add">Add date</button>
+          </div>
+          <p class="hint" id="date-status" aria-live="polite"></p>
+          <ul class="date-list" id="date-list"></ul>
+          <input type="hidden" name="offense_dates" id="offense_dates" value="${escapeHtml(fields.offenseDates)}">
         </div>
         <div class="field notes-field">
-          <label for="notes">Notes</label>
-          <p class="help">Write anything the IDs and codes do not capture.</p>
+          <div class="field-head">
+            <label for="notes">Notes</label>
+            <p class="count" id="notes-count" aria-live="polite">0 / ${MAX_NOTES_LENGTH}</p>
+          </div>
+          <p class="help">Any additional context that your report requires. Please try to be clear and concise. ${MAX_NOTES_LENGTH} characters or fewer.</p>
           <textarea id="notes" name="notes" class="notes" maxlength="${MAX_NOTES_LENGTH}" placeholder="What should we check?">${escapeHtml(fields.notes)}</textarea>
         </div>
       </fieldset>
@@ -317,10 +468,24 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
         function isIdol(value) {
           return value.charAt(0) === amp && body.test(value.slice(1)) && value.length >= 3 && value.length <= 9;
         }
+        var maxIds = ${MAX_ID_COUNT};
+        var maxCodes = ${MAX_CODE_COUNT};
+        var maxNotes = ${MAX_NOTES_LENGTH};
         function tokens(value) {
           return String(value || '').split(/[\\s,]+/).map(function (token) {
             return token.replace(/^\\s+|\\s+$/g, '');
           }).filter(Boolean);
+        }
+        function uniqueTokens(list, fold) {
+          var seen = {};
+          var out = [];
+          list.forEach(function (token) {
+            var key = fold ? token.toLowerCase() : token;
+            if (seen[key]) return;
+            seen[key] = true;
+            out.push(token);
+          });
+          return out;
         }
         function fieldTokens(name) {
           return tokens(form.elements[name] && form.elements[name].value);
@@ -331,63 +496,79 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
           node.className = warn ? 'hint is-warn' : 'hint';
           node.textContent = text;
         }
-        function review(name, hintId, check, emptyText, okOne, okMany, badText) {
-          var list = fieldTokens(name);
+        function setCount(id, used, max) {
+          var node = document.getElementById(id);
+          if (!node) return;
+          node.className = used > max ? 'count is-warn' : 'count';
+          node.textContent = used + ' / ' + max;
+        }
+        function review(name, hintId, max, check, emptyText, okOne, okMany, badText, noun, fold) {
+          var list = uniqueTokens(fieldTokens(name), fold);
           var good = 0;
           var bad = 0;
           list.forEach(function (token) {
             if (check(token)) good += 1;
             else bad += 1;
           });
+          setCount(name + '-count', list.length, max);
           if (!list.length) setHint(hintId, emptyText, false);
           else if (bad) setHint(hintId, badText, true);
+          else if (list.length > max) setHint(hintId, 'Enter no more than ' + max + ' ' + noun + '.', true);
           else setHint(hintId, good === 1 ? okOne : good + ' ' + okMany, false);
-          return { good: good, bad: bad };
+          return { good: good, bad: bad, over: list.length > max };
         }
         function gaps() {
           var missing = [];
           if (!form.querySelector('input[name="reason"]:checked')) missing.push('a reason');
           var users = review(
-            'user_ids', 'user-status', isSnowflake,
+            'user_ids', 'user-status', maxIds, isSnowflake,
             'Copy User ID from Discord Developer Mode.',
             '1 user ID recognized.', 'user IDs recognized.',
-            'Each user ID must be a Discord snowflake (17–19 digits).'
+            'Each user ID must be a Discord snowflake (17–19 digits).',
+            'user IDs', false
           );
           var servers = review(
-            'server_ids', 'server-status', isSnowflake,
+            'server_ids', 'server-status', maxIds, isSnowflake,
             'Copy Server ID from the server icon menu.',
             '1 server ID recognized.', 'server IDs recognized.',
-            'Each server ID must be a Discord snowflake (17–19 digits).'
+            'Each server ID must be a Discord snowflake (17–19 digits).',
+            'server IDs', false
           );
           var channels = review(
-            'channel_ids', 'channel-status', isSnowflake,
+            'channel_ids', 'channel-status', maxIds, isSnowflake,
             'Copy Channel ID from the channel menu.',
             '1 channel ID recognized.', 'channel IDs recognized.',
-            'Each channel ID must be a Discord snowflake (17–19 digits).'
+            'Each channel ID must be a Discord snowflake (17–19 digits).',
+            'channel IDs', false
           );
           var cards = review(
-            'card_codes', 'card-status', isCard,
+            'card_codes', 'card-status', maxCodes, isCard,
             '3–8 letters or numbers, such as a3f9k.',
             '1 card code recognized.', 'card codes recognized.',
-            'Each card code must be 3–8 letters or numbers.'
+            'Each card code must be 3–8 letters or numbers.',
+            'card codes', true
           );
           var dyes = review(
-            'dye_codes', 'dye-status', isDye,
+            'dye_codes', 'dye-status', maxCodes, isDye,
             'A dollar sign, then 2–8 letters or numbers.',
             '1 dye code recognized.', 'dye codes recognized.',
-            'Each dye code must start with a dollar sign followed by 2–8 letters or numbers.'
+            'Each dye code must start with a dollar sign followed by 2–8 letters or numbers.',
+            'dye codes', true
           );
           var idols = review(
-            'idol_codes', 'idol-status', isIdol,
+            'idol_codes', 'idol-status', maxCodes, isIdol,
             'An ampersand, then 2–8 letters or numbers.',
             '1 Idol code recognized.', 'Idol codes recognized.',
-            'Each Idol code must start with an ampersand followed by 2–8 letters or numbers.'
+            'Each Idol code must start with an ampersand followed by 2–8 letters or numbers.',
+            'Idol codes', true
           );
           if (!users.good && !servers.good && !channels.good) {
             missing.push('a user, server, or channel ID');
           }
           if (users.bad || servers.bad || channels.bad) missing.push('valid Discord IDs');
+          if (users.over || servers.over || channels.over) missing.push(maxIds + ' or fewer IDs in each field');
           if (cards.bad || dyes.bad || idols.bad) missing.push('valid Karuta codes');
+          if (cards.over || dyes.over || idols.over) missing.push(maxCodes + ' or fewer codes in each field');
           if (!form.elements.acknowledged || !form.elements.acknowledged.checked) {
             missing.push('the signature');
           }
@@ -399,11 +580,93 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
         }
         function sync() {
           var missing = gaps();
+          var notes = form.elements.notes;
+          setCount('notes-count', notes ? notes.value.length : 0, maxNotes);
           submit.disabled = missing.length > 0;
           needed.textContent = missing.length
-            ? 'Still needed: ' + joinList(missing)
+            ? 'Still needed: ' + joinList(missing) + '.'
             : 'Ready to submit.';
         }
+        var datePick = document.getElementById('date-pick');
+        var dateAdd = document.getElementById('date-add');
+        var dateList = document.getElementById('date-list');
+        var dateHidden = document.getElementById('offense_dates');
+        var maxDates = ${MAX_DATE_COUNT};
+        var todayLimit = datePick && datePick.getAttribute('max');
+        var earliest = datePick && datePick.getAttribute('min');
+        function dateTokens() {
+          return String(dateHidden && dateHidden.value || '').split(/[\\s,]+/).filter(Boolean);
+        }
+        function isListedDate(value) {
+          if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
+          var year = Number(value.slice(0, 4));
+          var month = Number(value.slice(5, 7));
+          var day = Number(value.slice(8, 10));
+          var date = new Date(Date.UTC(year, month - 1, day));
+          if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+            return false;
+          }
+          if (earliest && value < earliest) return false;
+          return !todayLimit || value <= todayLimit;
+        }
+        function writeDates(values) {
+          values.sort();
+          if (dateHidden) dateHidden.value = values.join(',');
+          if (!dateList) return;
+          dateList.textContent = '';
+          values.forEach(function (value) {
+            var item = document.createElement('li');
+            item.className = 'date-chip';
+            var label = document.createElement('span');
+            label.textContent = value;
+            var remove = document.createElement('button');
+            remove.type = 'button';
+            remove.setAttribute('aria-label', 'Remove ' + value);
+            remove.textContent = '\\u00d7';
+            remove.addEventListener('click', function () {
+              writeDates(dateTokens().filter(function (token) { return token !== value; }));
+              setHint('date-status', '', false);
+            });
+            item.appendChild(label);
+            item.appendChild(remove);
+            dateList.appendChild(item);
+          });
+          setCount('date-count', values.length, maxDates);
+        }
+        function addDate() {
+          var value = datePick && datePick.value;
+          if (!value) {
+            setHint('date-status', 'Choose a date first.', true);
+            return;
+          }
+          if (!isListedDate(value)) {
+            setHint('date-status', 'Each date must be a real calendar day from Nov. 24, 2019, through today.', true);
+            return;
+          }
+          var values = dateTokens();
+          if (values.indexOf(value) >= 0) {
+            setHint('date-status', 'That date is already listed.', true);
+            return;
+          }
+          if (values.length >= maxDates) {
+            setHint('date-status', 'Enter no more than ' + maxDates + ' dates.', true);
+            return;
+          }
+          values.push(value);
+          writeDates(values);
+          if (datePick) datePick.value = '';
+          setHint('date-status', values.length === 1 ? '1 date added.' : values.length + ' dates added.', false);
+        }
+        if (dateAdd) dateAdd.addEventListener('click', addDate);
+        if (datePick) {
+          datePick.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              addDate();
+            }
+          });
+        }
+        writeDates(dateTokens());
         form.addEventListener('input', sync);
         form.addEventListener('change', sync);
         form.addEventListener('submit', function (event) {
@@ -415,32 +678,24 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
 }
 
 export function renderReportThanks(): string {
-  return layout(
+  return headed(
     'Report submitted',
-    `<p class="brand">Karuta</p>
-    <h1>We have the report.</h1>
-    <p class="lede">Your report was submitted. We will review it.</p>`
+    `<p class="lede">Your report has been received. We will review it when we have time.</p>
+    <p class="actions"><a class="submit" href="/report">Back to the form</a></p>`
   )
 }
 
 export function renderReportForbidden(message: string): string {
-  return layout(
-    'Report unavailable',
-    `<p class="brand">Karuta</p>
-    <h1>This form is closed for you.</h1>
-    <p class="lede">${escapeHtml(message)}</p>`
-  )
+  return headed('Access denied', `<p class="lede">${escapeHtml(message)}</p>`)
 }
 
 export function renderReportUnavailable(): string {
-  return renderReportForbidden('Report access could not be verified.')
+  return headed('Unavailable', `<p class="lede">Report access could not be verified.</p>`)
 }
 
 export function renderReportRateLimited(): string {
-  return layout(
+  return headed(
     'Too many reports',
-    `<p class="brand">Karuta</p>
-    <h1>Too many reports today.</h1>
-    <p class="error" role="alert">You have submitted too many reports. Try again later.</p>`
+    `<p class="error" role="alert">You have submitted too many reports in a short timeframe.</p>`
   )
 }

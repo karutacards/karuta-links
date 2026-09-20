@@ -4,6 +4,7 @@ import {
   isDiscordSnowflake,
   isValidCardCodeSyntax,
   isValidDyeCodeSyntax,
+  isOffenseDate,
   isValidIdolCodeSyntax,
   parseReportFields,
   tokenize,
@@ -33,8 +34,7 @@ describe('report validation', () => {
       reason: 'alting',
       userIds: ['135694375647838208'],
       serverIds: [],
-      channelIds: [],
-      acknowledged: true
+      channelIds: []
     })
   })
 
@@ -74,9 +74,23 @@ describe('report validation', () => {
   })
 
   it('rejects an overlong notes field', () => {
-    expect(parseReportFields(fields({ notes: 'x'.repeat(2001) }))).toMatchObject({
+    expect(parseReportFields(fields({ notes: 'x'.repeat(501) }))).toMatchObject({
       error: true,
-      status: 400
+      status: 400,
+      message: 'Notes must be 500 characters or fewer.'
+    })
+  })
+
+  it('caps IDs at 10 and codes at 50', () => {
+    const ids = Array.from({ length: 11 }, (_, i) => `1356943756478382${String(i).padStart(2, '0')}`)
+    const codes = Array.from({ length: 51 }, (_, i) => `ab${String(i).padStart(2, '0')}`)
+    expect(parseReportFields(fields({ userIds: ids.join(',') }))).toMatchObject({
+      error: true,
+      message: 'Enter no more than 10 user IDs.'
+    })
+    expect(parseReportFields(fields({ cardCodes: codes.join(',') }))).toMatchObject({
+      error: true,
+      message: 'Enter no more than 50 card codes.'
     })
   })
 
@@ -122,6 +136,25 @@ describe('report validation', () => {
     expect(parseReportFields(fields({ cardCodes: 'ab' }))).toMatchObject({
       error: true,
       message: 'Each card code must be 3–8 letters or numbers.'
+    })
+  })
+
+  it('accepts unique offense dates from Nov. 24, 2019, through today', () => {
+    const now = Date.UTC(2026, 8, 19)
+    expect(isOffenseDate('2019-11-24', '2026-09-19')).toBe(true)
+    expect(isOffenseDate('2024-03-15', '2026-09-19')).toBe(true)
+    expect(isOffenseDate('2019-11-23', '2026-09-19')).toBe(false)
+    expect(isOffenseDate('2026-02-31', '2026-09-19')).toBe(false)
+    expect(isOffenseDate('2026-09-20', '2026-09-19')).toBe(false)
+    const parsed = parseReportFields(fields({
+      offenseDates: '2024-03-15, 2019-11-24, 2024-03-15'
+    }), now)
+    expect(parsed).toMatchObject({
+      offenseDates: ['2019-11-24', '2024-03-15']
+    })
+    expect(parseReportFields(fields({ offenseDates: '2019-11-23' }), now)).toMatchObject({
+      error: true,
+      message: 'Each date must be a real calendar day from Nov. 24, 2019, through today.'
     })
   })
 })

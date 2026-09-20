@@ -1,16 +1,21 @@
 import {
   envAccessLoaders,
-  meetsCredentials,
   type AccessDecision,
   type AccessDenied,
-  type DraftAccessLoaders
+  type DraftAccessLoaders,
+  type PlayerStats
 } from './draft-access'
-import { canAdminDrafts, draftsConfig } from './drafts-config'
 import { isReportBanned } from './report-store'
 
 export const REPORT_ACCESS_DENIED_MESSAGE = 'You do not have access to the report form.'
 export const REPORT_ACCESS_UNAVAILABLE_MESSAGE = 'Report access could not be verified.'
 export const REPORT_BANNED_MESSAGE = 'You cannot use the report form.'
+
+export const REPORT_CREDENTIALS = {
+  minDrops: 1000,
+  minGrabs: 1000,
+  minPurchases: 1
+} as const
 
 export type ReportAccessLoaders = DraftAccessLoaders & {
   isReportBanned: (discordId: string) => Promise<boolean>
@@ -20,11 +25,12 @@ function denied(message: string, status: 403 | 503, code: AccessDenied['code']):
   return { ok: false, status, code, message }
 }
 
-export function reportAccessConfig() {
-  return {
-    ...draftsConfig,
-    access: 'credentials' as const
-  }
+export function meetsReportCredentials(stats: PlayerStats): boolean {
+  return (
+    stats.drops >= REPORT_CREDENTIALS.minDrops ||
+    stats.grabs >= REPORT_CREDENTIALS.minGrabs ||
+    stats.purchases >= REPORT_CREDENTIALS.minPurchases
+  )
 }
 
 export async function evaluateReportAccess(
@@ -47,17 +53,13 @@ export async function evaluateReportAccess(
     return denied(REPORT_ACCESS_UNAVAILABLE_MESSAGE, 503, 'UNAVAILABLE')
   }
 
-  if (canAdminDrafts(discordId)) {
-    return { ok: true }
-  }
-
   let stats
   try {
     stats = await loaders.getPlayerStats(discordId)
   } catch {
     return denied(REPORT_ACCESS_UNAVAILABLE_MESSAGE, 503, 'UNAVAILABLE')
   }
-  if (!stats || !meetsCredentials(stats, reportAccessConfig())) {
+  if (!stats || !meetsReportCredentials(stats)) {
     return denied(REPORT_ACCESS_DENIED_MESSAGE, 403, 'FORBIDDEN')
   }
   return { ok: true }

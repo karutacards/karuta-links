@@ -50,8 +50,8 @@ const payload: ReportPayload = {
   cardCodes: ['Ab12C'],
   dyeCodes: [],
   idolCodes: [],
-  notes: 'Repeated snipes.',
-  acknowledged: true
+  offenseDates: ['2024-03-15'],
+  notes: 'Repeated snipes.'
 }
 
 describe('report store', () => {

@@ -10,6 +10,7 @@ export type ReportFields = {
   cardCodes: string
   dyeCodes: string
   idolCodes: string
+  offenseDates: string
   notes: string
   acknowledged: boolean
 }
@@ -22,8 +23,8 @@ export type ReportPayload = {
   cardCodes: string[]
   dyeCodes: string[]
   idolCodes: string[]
+  offenseDates: string[]
   notes: string
-  acknowledged: true
 }
 
 export type ReportValidationError = {
@@ -39,9 +40,32 @@ export const DYE_CODE_PATTERN = /^\$[a-zA-Z0-9]{2,}$/
 export const IDOL_CODE_PATTERN = /^&[a-zA-Z0-9]{2,}$/
 export const MAX_CARD_CODE_LENGTH = 8
 export const MAX_PREFIXED_CODE_LENGTH = 9
-export const MAX_ID_COUNT = 20
-export const MAX_CODE_COUNT = 20
-export const MAX_NOTES_LENGTH = 2000
+export const MAX_ID_COUNT = 10
+export const MAX_CODE_COUNT = 50
+export const MAX_DATE_COUNT = 20
+export const MAX_NOTES_LENGTH = 500
+export const OFFENSE_DATE_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/
+export const EARLIEST_OFFENSE_DATE = '2019-11-24'
+
+export function utcDateString(at = Date.now()): string {
+  return new Date(at).toISOString().slice(0, 10)
+}
+
+export function isOffenseDate(value: string, today = utcDateString()): boolean {
+  if (!OFFENSE_DATE_PATTERN.test(value)) return false
+  const year = Number(value.slice(0, 4))
+  const month = Number(value.slice(5, 7))
+  const day = Number(value.slice(8, 10))
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return false
+  }
+  return value >= EARLIEST_OFFENSE_DATE && value <= today
+}
 
 export function isDiscordSnowflake(value: string): boolean {
   return SNOWFLAKE_PATTERN.test(value)
@@ -91,6 +115,7 @@ export function emptyReportFields(): ReportFields {
     cardCodes: '',
     dyeCodes: '',
     idolCodes: '',
+    offenseDates: '',
     notes: '',
     acknowledged: false
   }
@@ -106,6 +131,7 @@ export function fieldsFromForm(form: FormData): ReportFields {
     cardCodes: readFormString(form, 'card_codes'),
     dyeCodes: readFormString(form, 'dye_codes'),
     idolCodes: readFormString(form, 'idol_codes'),
+    offenseDates: readFormString(form, 'offense_dates'),
     notes: readFormString(form, 'notes'),
     acknowledged: acknowledged === 'on' || acknowledged === 'true' || acknowledged === '1'
   }
@@ -186,7 +212,27 @@ function parseCodes(
   return tokens
 }
 
-export function parseReportFields(fields: ReportFields): ReportPayload | ReportValidationError {
+function parseOffenseDates(
+  raw: string,
+  fields: ReportFields,
+  today: string
+): string[] | ReportValidationError {
+  const tokens = uniqueTokens(tokenize(raw)).sort()
+  if (tokens.length > MAX_DATE_COUNT) {
+    return invalid(fields, `Enter no more than ${MAX_DATE_COUNT} dates.`)
+  }
+  for (const token of tokens) {
+    if (!isOffenseDate(token, today)) {
+      return invalid(fields, 'Each date must be a real calendar day from Nov. 24, 2019, through today.')
+    }
+  }
+  return tokens
+}
+
+export function parseReportFields(
+  fields: ReportFields,
+  now = Date.now()
+): ReportPayload | ReportValidationError {
   if (!isReportReason(fields.reason)) {
     return invalid(fields, 'Select a reason for this report.')
   }
@@ -227,6 +273,9 @@ export function parseReportFields(fields: ReportFields): ReportPayload | ReportV
   )
   if ('error' in idolCodes) return idolCodes
 
+  const offenseDates = parseOffenseDates(fields.offenseDates, fields, utcDateString(now))
+  if ('error' in offenseDates) return offenseDates
+
   if (fields.notes.length > MAX_NOTES_LENGTH) {
     return invalid(fields, `Notes must be ${MAX_NOTES_LENGTH.toLocaleString('en-US')} characters or fewer.`)
   }
@@ -243,7 +292,7 @@ export function parseReportFields(fields: ReportFields): ReportPayload | ReportV
     cardCodes,
     dyeCodes,
     idolCodes,
-    notes: fields.notes.trim(),
-    acknowledged: true
+    offenseDates,
+    notes: fields.notes.trim()
   }
 }

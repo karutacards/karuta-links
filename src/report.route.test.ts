@@ -1,13 +1,21 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from './app'
 import { resetBlacklistCache } from './draft-access'
-import { draftsConfig } from './drafts-config'
 import { REPORT_BANNED_MESSAGE } from './report-access'
 import { createSessionCookie, newSession, parseCookies, NEXT_COOKIE } from './session'
+
+vi.mock('./firestore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./firestore')>()
+  return {
+    ...actual,
+    getFirestoreDocument: async () => ({ cardDropped: 1000 })
+  }
+})
 
 function testEnv(overrides: Partial<Env> = {}): Env {
   return {
     INGEST_TOKEN: 'test-ingest',
+    DRAFT_WRITE: { limit: async () => ({ success: true }) },
     DB: {} as D1Database,
     IMAGES: {} as R2Bucket,
     DISCORD_CLIENT_ID: 'test-client',
@@ -57,6 +65,8 @@ async function allowedEnv(overrides: Partial<Env> = {}): Promise<Env> {
       get: async () => ({ arrayBuffer: async () => bytes })
     } as unknown as R2Bucket,
     DB: reportDb(),
+    FIRESTORE_PROJECT_ID: 'test-project',
+    FIRESTORE_SERVICE_ACCOUNT: 'test-service-account',
     ...overrides
   })
 }
@@ -106,9 +116,8 @@ describe('report routes', () => {
     expect(await response.text()).toContain(REPORT_BANNED_MESSAGE)
   })
 
-  it('renders the form for an allowed admin', async () => {
-    const adminId = draftsConfig.adminIds[0] ?? '1'
-    const cookie = await createSessionCookie(newSession(adminId, 'admin'), 'test-session-secret', false)
+  it('renders the form for a player who meets a credential bar', async () => {
+    const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
     const response = await app.request(
       'http://127.0.0.1:8787/report',
       { headers: { Cookie: cookie.split(';')[0] ?? '' } },
@@ -122,8 +131,7 @@ describe('report routes', () => {
   })
 
   it('rejects a submit with no target IDs', async () => {
-    const adminId = draftsConfig.adminIds[0] ?? '1'
-    const cookie = await createSessionCookie(newSession(adminId, 'admin'), 'test-session-secret', false)
+    const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
     const body = new URLSearchParams({
       reason: 'alting',
       acknowledged: 'on'
@@ -145,8 +153,7 @@ describe('report routes', () => {
   })
 
   it('stores a valid report and thanks the reporter', async () => {
-    const adminId = draftsConfig.adminIds[0] ?? '1'
-    const cookie = await createSessionCookie(newSession(adminId, 'admin'), 'test-session-secret', false)
+    const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
     const body = new URLSearchParams({
       reason: 'scamming',
       user_ids: '135694375647838208',
@@ -166,12 +173,11 @@ describe('report routes', () => {
       await allowedEnv()
     )
     expect(response.status).toBe(200)
-    expect(await response.text()).toContain('Your report was submitted.')
+    expect(await response.text()).toContain('Your report has been received.')
   })
 
-  it('rate-limits a fourth report in 24 hours', async () => {
-    const adminId = draftsConfig.adminIds[0] ?? '1'
-    const cookie = await createSessionCookie(newSession(adminId, 'admin'), 'test-session-secret', false)
+  it('rate-limits an 11th report in one hour', async () => {
+    const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
     const body = new URLSearchParams({
       reason: 'botting',
       server_ids: '135694375647838208',
@@ -187,9 +193,13 @@ describe('report routes', () => {
         },
         body
       },
-      await allowedEnv({ DB: reportDb({ recent: 3 }) })
+      await allowedEnv({ DB: reportDb({ recent: 10 }) })
     )
     expect(response.status).toBe(429)
-    expect(await response.text()).toContain('You have submitted too many reports.')
+    const page = await response.text()
+    expect(page).toContain('You have submitted too many reports in a short timeframe.')
+    expect(page).not.toContain('10 reports')
+    expect(page).not.toContain('per hour')
+    expect(page).not.toContain('Too many reports today.')
   })
 })
