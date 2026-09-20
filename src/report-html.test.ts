@@ -3,6 +3,7 @@ import {
   REPORT_EMBED_DESCRIPTION,
   REPORT_EMBED_TITLE,
   REPORT_FORM_LEDE,
+  REPORT_START_LEDE,
   REPORT_OAUTH_START,
   renderReportForbidden,
   renderReportForm,
@@ -34,8 +35,11 @@ describe('report html', () => {
     expect(page).toContain(`property="og:description" content="${REPORT_EMBED_DESCRIPTION}"`)
     expect(page).toContain(`href="${REPORT_OAUTH_START}"`)
     expect(page).toContain(`0;url=${REPORT_OAUTH_START}`)
-    expect(page).toContain('Continue to Discord.')
-    expect(page).toContain(REPORT_FORM_LEDE)
+    expect(page).toContain('Continue to Discord')
+    expect(page).not.toContain('Continue to Discord.')
+    expect(page).toContain(REPORT_START_LEDE)
+    expect(page).not.toContain(REPORT_FORM_LEDE)
+    expect(page).not.toContain('class="avatar"')
   })
 
   it('thanks the reporter and links back to the form', () => {
@@ -78,6 +82,7 @@ describe('report html', () => {
     expect(page).toContain('<h1>Report a player</h1>')
     expect(page).toContain('href="https://karuta.com"')
     expect(page).toContain(REPORT_FORM_LEDE)
+    expect(page).not.toContain('class="avatar"')
     expect(page).not.toContain('Say what happened')
     expect(page).toContain(`property="og:title" content="${REPORT_EMBED_TITLE}"`)
     expect(page).toContain(`property="og:description" content="${REPORT_EMBED_DESCRIPTION}"`)
@@ -110,5 +115,20 @@ describe('report html', () => {
     expect(page).toContain('0 / 50')
     expect(page).toContain('0 / 20')
     expect(page).toContain('0 / 500')
+  })
+
+  it('puts the signed-in avatar to the right of the heading', () => {
+    const hash = 'a'.repeat(32)
+    const page = renderReportForm({
+      viewer: {
+        discordId: '135694375647838208',
+        username: 'tester "x"',
+        avatar: hash
+      }
+    })
+    expect(page).toContain(`src="https://cdn.discordapp.com/avatars/135694375647838208/${hash}.png?size=64"`)
+    expect(page).toContain('alt="tester &quot;x&quot;"')
+    expect(page).toContain('class="masthead"')
+    expect(page).toContain('class="avatar"')
   })
 })

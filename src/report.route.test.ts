@@ -145,6 +145,8 @@ describe('report routes', () => {
     expect(body).toContain('Report a player')
     expect(body).toContain('Alting')
     expect(body).toContain('falsely reporting a player')
+    expect(body).toContain('class="avatar"')
+    expect(body).toContain('https://cdn.discordapp.com/embed/avatars/0.png')
   })
 
   it('rejects a submit with no target IDs', async () => {

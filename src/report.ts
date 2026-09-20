@@ -8,7 +8,8 @@ import {
   renderReportRateLimited,
   renderReportStart,
   renderReportThanks,
-  renderReportUnavailable
+  renderReportUnavailable,
+  type ReportViewer
 } from './report-html'
 import {
   REPORT_OG_BYTES,
@@ -36,11 +37,20 @@ function html(body: string, status = 200): Response {
   })
 }
 
-function accessHtml(decision: AccessDenied): Response {
-  if (decision.status === 503) {
-    return html(renderReportUnavailable(), 503)
+function viewerOf(session: Session): ReportViewer {
+  return {
+    discordId: session.discordId,
+    username: session.username,
+    avatar: session.avatar
   }
-  return html(renderReportForbidden(decision.message), decision.status)
+}
+
+function accessHtml(decision: AccessDenied, session: Session): Response {
+  const viewer = viewerOf(session)
+  if (decision.status === 503) {
+    return html(renderReportUnavailable(viewer), 503)
+  }
+  return html(renderReportForbidden(decision.message, viewer), decision.status)
 }
 
 function startOAuth(request: Request): Response {
@@ -62,7 +72,7 @@ async function gateReport(
   }
   const decision = await reportAccessForEnv(env, session.discordId)
   if (!decision.ok) {
-    return accessHtml(decision)
+    return accessHtml(decision, session)
   }
   return { session }
 }
@@ -86,7 +96,7 @@ export function registerReports(app: Hono<{ Bindings: Env }>): void {
     if ('missing' in gated) {
       return html(renderReportStart())
     }
-    return html(renderReportForm())
+    return html(renderReportForm({ viewer: viewerOf(gated.session) }))
   })
 
   app.post('/report', async (c) => {
@@ -100,18 +110,25 @@ export function registerReports(app: Hono<{ Bindings: Env }>): void {
     const form = await c.req.formData()
     const parsed = parseReportFields(fieldsFromForm(form))
     if ('error' in parsed) {
-      return html(renderReportForm({ error: parsed.message, fields: parsed.fields }), 400)
+      return html(
+        renderReportForm({
+          error: parsed.message,
+          fields: parsed.fields,
+          viewer: viewerOf(gated.session)
+        }),
+        400
+      )
     }
     const since = Date.now() - REPORT_RATE_WINDOW_MS
     const recent = await countRecentReports(c.env.DB, gated.session.discordId, since)
     if (recent >= REPORT_RATE_LIMIT) {
-      return html(renderReportRateLimited(), 429)
+      return html(renderReportRateLimited(viewerOf(gated.session)), 429)
     }
     await insertReport(c.env.DB, {
       reporterId: gated.session.discordId,
       reporterUsername: gated.session.username,
       payload: parsed
     })
-    return html(renderReportThanks())
+    return html(renderReportThanks(viewerOf(gated.session)))
   })
 }

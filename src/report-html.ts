@@ -1,3 +1,4 @@
+import { discordAvatarUrl } from './discord-avatar'
 import { escapeHtml } from './escape'
 import {
   MAX_CODE_COUNT,
@@ -24,13 +25,37 @@ export const REPORT_EMBED_DESCRIPTION =
   'Report cheating in Karuta. Share what happened and who or where we should look into. A false report is a permanent ban from this form.'
 export const REPORT_FORM_LEDE =
   'Report cheating in Karuta. Share what happened and who or where we should look into. Required sections are marked with an asterisk.'
+export const REPORT_START_LEDE =
+  'You must log in with Discord and have significant Karuta activity on your account before you can submit a report.'
 
-function headed(heading: string, rest: string, refreshTo?: string): string {
+export type ReportViewer = {
+  discordId: string
+  username: string
+  avatar: string
+}
+
+function viewerAvatar(viewer?: ReportViewer): string {
+  if (!viewer) {
+    return ''
+  }
+  return `<img class="avatar" src="${escapeHtml(discordAvatarUrl(viewer.discordId, viewer.avatar))}" alt="${escapeHtml(viewer.username)}" width="44" height="44" decoding="async" referrerpolicy="no-referrer">`
+}
+
+function headed(
+  heading: string,
+  rest: string,
+  options: { refreshTo?: string; viewer?: ReportViewer } = {}
+): string {
   return layout(
-    `<p class="brand"><a href="https://karuta.com">Karuta</a></p>
-    <h1>${escapeHtml(heading)}</h1>
+    `<header class="masthead">
+      <div class="masthead-copy">
+        <p class="brand"><a href="https://karuta.com">Karuta</a></p>
+        <h1>${escapeHtml(heading)}</h1>
+      </div>
+      ${viewerAvatar(options.viewer)}
+    </header>
     ${rest}`,
-    refreshTo
+    options.refreshTo
   )
 }
 
@@ -104,6 +129,22 @@ function layout(body: string, refreshTo?: string): string {
     .brand a:focus-visible {
       outline: 2px solid var(--karuta);
       outline-offset: 2px;
+    }
+    .masthead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .masthead-copy { min-width: 0; }
+    .avatar {
+      flex: 0 0 auto;
+      width: 2.75rem;
+      height: 2.75rem;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--field);
+      border: 1px solid var(--line);
     }
     h1 {
       margin: 0;
@@ -389,13 +430,15 @@ export const REPORT_OAUTH_START = '/api/auth/discord?next=/report'
 export function renderReportStart(): string {
   return headed(
     'Report a player',
-    `<p class="lede">${REPORT_FORM_LEDE}</p>
-    <p class="actions"><a class="submit" href="${REPORT_OAUTH_START}">Continue to Discord.</a></p>`,
-    REPORT_OAUTH_START
+    `<p class="lede">${REPORT_START_LEDE}</p>
+    <p class="actions"><a class="submit" href="${REPORT_OAUTH_START}">Continue to Discord</a></p>`,
+    { refreshTo: REPORT_OAUTH_START }
   )
 }
 
-export function renderReportForm(options: { error?: string; fields?: ReportFields } = {}): string {
+export function renderReportForm(
+  options: { error?: string; fields?: ReportFields; viewer?: ReportViewer } = {}
+): string {
   const fields = options.fields ?? emptyReportFields()
   const today = utcDateString()
   const error = options.error
@@ -413,7 +456,9 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
   }).join('')
   const ackChecked = fields.acknowledged ? ' checked' : ''
 
-  return headed('Report a player', `<p class="lede">${REPORT_FORM_LEDE}</p>
+  return headed(
+    'Report a player',
+    `<p class="lede">${REPORT_FORM_LEDE}</p>
     ${error}
     <form class="form" id="report-form" method="post" action="/report" novalidate>
       <fieldset class="block">
@@ -711,28 +756,32 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
         });
         sync();
       })();
-    </script>`)
-}
-
-export function renderReportThanks(): string {
-  return headed(
-    'Report submitted',
-    `<p class="lede">Your report has been received. We will review it when we have time.</p>
-    <p class="actions"><a class="submit" href="/report">Back to the form</a></p>`
+    </script>`,
+    { viewer: options.viewer }
   )
 }
 
-export function renderReportForbidden(message: string): string {
-  return headed('Access denied', `<p class="lede">${escapeHtml(message)}</p>`)
+export function renderReportThanks(viewer?: ReportViewer): string {
+  return headed(
+    'Report submitted',
+    `<p class="lede">Your report has been received. We will review it when we have time.</p>
+    <p class="actions"><a class="submit" href="/report">Back to the form</a></p>`,
+    { viewer }
+  )
 }
 
-export function renderReportUnavailable(): string {
-  return headed('Unavailable', `<p class="lede">Report access could not be verified.</p>`)
+export function renderReportForbidden(message: string, viewer?: ReportViewer): string {
+  return headed('Access denied', `<p class="lede">${escapeHtml(message)}</p>`, { viewer })
 }
 
-export function renderReportRateLimited(): string {
+export function renderReportUnavailable(viewer?: ReportViewer): string {
+  return headed('Unavailable', `<p class="lede">Report access could not be verified.</p>`, { viewer })
+}
+
+export function renderReportRateLimited(viewer?: ReportViewer): string {
   return headed(
     'Too many reports',
-    `<p class="error" role="alert">You have submitted too many reports in a short timeframe.</p>`
+    `<p class="error" role="alert">You have submitted too many reports in a short timeframe.</p>`,
+    { viewer }
   )
 }
