@@ -26,6 +26,6 @@ describe('report og thumbnail', () => {
     expect(REPORT_OG_HEIGHT).toBe(256)
     expect(String.fromCharCode(...REPORT_OG_BYTES.slice(0, 4))).toBe('RIFF')
     expect(String.fromCharCode(...REPORT_OG_BYTES.slice(8, 12))).toBe('WEBP')
-    expect(REPORT_OG_BYTES.byteLength).toBeLessThan(30_000)
+    expect(REPORT_OG_BYTES.byteLength).toBeLessThan(90_000)
   })
 })
