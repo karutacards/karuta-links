@@ -4,6 +4,7 @@
 | --- | --- |
 | [getting-started.md](getting-started.md) | Clone to a running local Worker |
 | [architecture.md](architecture.md) | Worker, D1 and routing |
+| [report-og/README.md](report-og/README.md) | Report embed thumbnail art and prompts |
 | [adr/0001-use-cloudflare-workers-and-d1.md](adr/0001-use-cloudflare-workers-and-d1.md) | Stack choice |
 | [adr/0002-routing-canonical-and-slug.md](adr/0002-routing-canonical-and-slug.md) | URL rule |
 | [runbooks/deploy.md](runbooks/deploy.md) | Deploy and secrets |
