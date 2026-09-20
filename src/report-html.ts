@@ -21,7 +21,7 @@ import {
 
 export const REPORT_EMBED_TITLE = 'Karuta report form'
 export const REPORT_EMBED_DESCRIPTION =
-  'Report cheating in Karuta. Share what happened and who or where we should look.'
+  'Report cheating in Karuta. Share what happened and who or where we should look. A false report is a permanent ban from this form.'
 export const REPORT_FORM_LEDE =
   'Report cheating in Karuta. Share what happened and who or where we should look. Required sections are marked with an asterisk.'
 
