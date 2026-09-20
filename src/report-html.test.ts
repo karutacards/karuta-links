@@ -40,7 +40,7 @@ describe('report html', () => {
 
   it('thanks the reporter and links back to the form', () => {
     const page = renderReportThanks()
-    expect(page).toContain('<title>Report submitted</title>')
+    expect(page).toContain('<title>Karuta report form</title>')
     expect(page).toContain('<h1>Report submitted</h1>')
     expect(page).not.toContain('<h1>Report submitted.</h1>')
     expect(page).toContain('Your report has been received. We will review it when we have time.')
@@ -59,7 +59,7 @@ describe('report html', () => {
   it('prints the forbidden sentence as a complete sentence', () => {
     const page = renderReportForbidden('You cannot use the report form.')
     expect(page).toContain('You cannot use the report form.')
-    expect(page).toContain('<title>Access denied</title>')
+    expect(page).toContain('<title>Karuta report form</title>')
     expect(page).toContain('<h1>Access denied</h1>')
     expect(page).not.toContain('This form is closed for you.')
   })
@@ -74,7 +74,7 @@ describe('report html', () => {
     expect(page).toContain('#0b001c')
     expect(page).toContain('#7187dd')
     expect(page).toContain('Karuta')
-    expect(page).toContain('<title>Report a player</title>')
+    expect(page).toContain('<title>Karuta report form</title>')
     expect(page).toContain('<h1>Report a player</h1>')
     expect(page).toContain('href="https://karuta.com"')
     expect(page).toContain(REPORT_FORM_LEDE)

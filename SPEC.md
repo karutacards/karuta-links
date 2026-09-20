@@ -153,7 +153,7 @@ The Worker is attached at `krta.cc`. `workers.dev` still serves the same Worker.
 
 `/report` is an unadvertised form for cheat reports. It uses a Karuta-branded night surface of its own (official purple gradient and periwinkle). It does not use dump page Georgia or the draft editor.
 
-A missing session on `GET /report` returns HTML so Discord can unfurl the URL, then starts OAuth back to `/report`. The embed title is Karuta report form. The embed description is Report cheating in Karuta. Share what happened and who or where we should look. A false report is a permanent ban from this form. The embed thumbnail is a 256-pixel lossless transparent WebP at `/report-og.webp`. That image is not the site favicon. A missing session on `POST /report` redirects to OAuth. Opening or posting the form then:
+A missing session on `GET /report` returns HTML so Discord can unfurl the URL, then starts OAuth back to `/report`. The document title and embed title are Karuta report form. Headings stay short page labels. The embed description is Report cheating in Karuta. Share what happened and who or where we should look. A false report is a permanent ban from this form. The embed thumbnail is a 256-pixel lossless transparent WebP at `/report-og.webp`. That image is not the site favicon. A missing session on `POST /report` redirects to OAuth. Opening or posting the form then:
 
 1. Rejects Discord IDs in `report_bans` with `403` and a sentence that they cannot use the form.
 2. Re-checks the Karuta user blacklist.

@@ -25,17 +25,16 @@ export const REPORT_EMBED_DESCRIPTION =
 export const REPORT_FORM_LEDE =
   'Report cheating in Karuta. Share what happened and who or where we should look. Required sections are marked with an asterisk.'
 
-function headed(title: string, rest: string, refreshTo?: string): string {
+function headed(heading: string, rest: string, refreshTo?: string): string {
   return layout(
-    title,
     `<p class="brand"><a href="https://karuta.com">Karuta</a></p>
-    <h1>${escapeHtml(title)}</h1>
+    <h1>${escapeHtml(heading)}</h1>
     ${rest}`,
     refreshTo
   )
 }
 
-function layout(title: string, body: string, refreshTo?: string): string {
+function layout(body: string, refreshTo?: string): string {
   const refresh = refreshTo
     ? `\n  <meta http-equiv="refresh" content="0;url=${escapeHtml(refreshTo)}">`
     : ''
@@ -54,7 +53,7 @@ function layout(title: string, body: string, refreshTo?: string): string {
   <meta property="og:image:height" content="${REPORT_OG_HEIGHT}">
   <meta property="og:image:alt" content="${escapeHtml(REPORT_OG_ALT)}">
   <meta name="twitter:card" content="summary">${refresh}
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(REPORT_EMBED_TITLE)}</title>
   <style>
     :root {
       color-scheme: dark;
