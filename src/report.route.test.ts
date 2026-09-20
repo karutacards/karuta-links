@@ -78,14 +78,31 @@ afterEach(() => {
 describe('report routes', () => {
   it('starts OAuth and returns to /report', async () => {
     const response = await app.request('http://127.0.0.1:8787/report', {}, testEnv())
-    expect(response.status).toBe(302)
-    const location = new URL(response.headers.get('Location') ?? '', 'http://127.0.0.1:8787')
-    expect(location.pathname).toBe('/api/auth/discord')
-    expect(location.searchParams.get('next')).toBe('/report')
+    expect(response.status).toBe(200)
+    const page = await response.text()
+    expect(page).toContain('property="og:title" content="Karuta report form"')
+    expect(page).toContain(
+      'property="og:description" content="Report cheating in Karuta. Share what happened and who or where we should look."'
+    )
+    expect(page).toContain('href="/api/auth/discord?next=/report"')
+    expect(page).toContain('0;url=/api/auth/discord?next=/report')
 
-    const start = await app.request(location.toString(), {}, testEnv())
+    const start = await app.request(
+      'http://127.0.0.1:8787/api/auth/discord?next=/report',
+      {},
+      testEnv()
+    )
     const nextCookie = start.headers.getSetCookie().find((cookie) => cookie.startsWith(`${NEXT_COOKIE}=`))
     expect(parseCookies(nextCookie ?? null)[NEXT_COOKIE]).toBe('/report')
+  })
+
+  it('serves the public embed thumbnail', async () => {
+    const response = await app.request('http://127.0.0.1:8787/report-og.webp', {}, testEnv())
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/webp')
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('RIFF')
+    expect(String.fromCharCode(...bytes.slice(8, 12))).toBe('WEBP')
   })
 
   it('fails closed when access cannot be verified', async () => {

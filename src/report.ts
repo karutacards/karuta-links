@@ -6,9 +6,15 @@ import {
   renderReportForbidden,
   renderReportForm,
   renderReportRateLimited,
+  renderReportStart,
   renderReportThanks,
   renderReportUnavailable
 } from './report-html'
+import {
+  REPORT_OG_BYTES,
+  REPORT_OG_CONTENT_TYPE,
+  REPORT_OG_PATH
+} from './report-og'
 import {
   countRecentReports,
   insertReport,
@@ -37,18 +43,22 @@ function accessHtml(decision: AccessDenied): Response {
   return html(renderReportForbidden(decision.message), decision.status)
 }
 
-async function requireReportSession(
+function startOAuth(request: Request): Response {
+  const url = new URL('/api/auth/discord', request.url)
+  url.searchParams.set('next', '/report')
+  return Response.redirect(url.toString(), 302)
+}
+
+async function gateReport(
   request: Request,
   env: Env
-): Promise<{ session: Session } | Response> {
+): Promise<{ session: Session } | { missing: true } | Response> {
   if (!oauthConfigured(env)) {
     return html(renderReportUnavailable(), 503)
   }
   const session = await getSession(request, env.SESSION_SECRET)
   if (!session) {
-    const url = new URL('/api/auth/discord', request.url)
-    url.searchParams.set('next', '/report')
-    return Response.redirect(url.toString(), 302)
+    return { missing: true }
   }
   const decision = await reportAccessForEnv(env, session.discordId)
   if (!decision.ok) {
@@ -58,18 +68,34 @@ async function requireReportSession(
 }
 
 export function registerReports(app: Hono<{ Bindings: Env }>): void {
+  app.get(REPORT_OG_PATH, () => {
+    return new Response(REPORT_OG_BYTES, {
+      headers: {
+        'content-type': REPORT_OG_CONTENT_TYPE,
+        'cache-control': 'public, max-age=604800',
+        'x-content-type-options': 'nosniff'
+      }
+    })
+  })
+
   app.get('/report', async (c) => {
-    const gated = await requireReportSession(c.req.raw, c.env)
+    const gated = await gateReport(c.req.raw, c.env)
     if (gated instanceof Response) {
       return gated
+    }
+    if ('missing' in gated) {
+      return html(renderReportStart())
     }
     return html(renderReportForm())
   })
 
   app.post('/report', async (c) => {
-    const gated = await requireReportSession(c.req.raw, c.env)
+    const gated = await gateReport(c.req.raw, c.env)
     if (gated instanceof Response) {
       return gated
+    }
+    if ('missing' in gated) {
+      return startOAuth(c.req.raw)
     }
     const form = await c.req.formData()
     const parsed = parseReportFields(fieldsFromForm(form))

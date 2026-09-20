@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { renderReportForbidden, renderReportForm, renderReportRateLimited, renderReportThanks } from './report-html'
+import {
+  REPORT_EMBED_DESCRIPTION,
+  REPORT_EMBED_TITLE,
+  REPORT_FORM_LEDE,
+  REPORT_OAUTH_START,
+  renderReportForbidden,
+  renderReportForm,
+  renderReportRateLimited,
+  renderReportStart,
+  renderReportThanks
+} from './report-html'
 import { emptyReportFields } from './report-validate'
 
 describe('report html', () => {
@@ -16,6 +26,16 @@ describe('report html', () => {
     expect(page).toContain('&lt;img src=x&gt;')
     expect(page).toContain('Sold &quot;accounts&quot;.')
     expect(page).not.toContain('<script>alert(1)</script>')
+  })
+
+  it('exposes embed tags on the unsigned start page', () => {
+    const page = renderReportStart()
+    expect(page).toContain(`property="og:title" content="${REPORT_EMBED_TITLE}"`)
+    expect(page).toContain(`property="og:description" content="${REPORT_EMBED_DESCRIPTION}"`)
+    expect(page).toContain(`href="${REPORT_OAUTH_START}"`)
+    expect(page).toContain(`0;url=${REPORT_OAUTH_START}`)
+    expect(page).toContain('Continue to Discord.')
+    expect(page).toContain(REPORT_FORM_LEDE)
   })
 
   it('thanks the reporter and links back to the form', () => {
@@ -57,6 +77,10 @@ describe('report html', () => {
     expect(page).toContain('<title>Report a player</title>')
     expect(page).toContain('<h1>Report a player</h1>')
     expect(page).toContain('href="https://karuta.com"')
+    expect(page).toContain(REPORT_FORM_LEDE)
+    expect(page).not.toContain('Say what happened')
+    expect(page).toContain(`property="og:title" content="${REPORT_EMBED_TITLE}"`)
+    expect(page).toContain(`property="og:description" content="${REPORT_EMBED_DESCRIPTION}"`)
     expect(page).toContain('noindex')
     expect(page).toContain('textarea.notes')
     expect(page).toContain('class="notes"')

@@ -11,23 +11,49 @@ import {
   utcDateString,
   type ReportFields
 } from './report-validate'
+import {
+  REPORT_OG_ALT,
+  REPORT_OG_CONTENT_TYPE,
+  REPORT_OG_HEIGHT,
+  REPORT_OG_URL,
+  REPORT_OG_WIDTH
+} from './report-og'
 
-function headed(title: string, rest: string): string {
+export const REPORT_EMBED_TITLE = 'Karuta report form'
+export const REPORT_EMBED_DESCRIPTION =
+  'Report cheating in Karuta. Share what happened and who or where we should look.'
+export const REPORT_FORM_LEDE =
+  'Report cheating in Karuta. Share what happened and who or where we should look. Required sections are marked with an asterisk.'
+
+function headed(title: string, rest: string, refreshTo?: string): string {
   return layout(
     title,
     `<p class="brand"><a href="https://karuta.com">Karuta</a></p>
     <h1>${escapeHtml(title)}</h1>
-    ${rest}`
+    ${rest}`,
+    refreshTo
   )
 }
 
-function layout(title: string, body: string): string {
+function layout(title: string, body: string, refreshTo?: string): string {
+  const refresh = refreshTo
+    ? `\n  <meta http-equiv="refresh" content="0;url=${escapeHtml(refreshTo)}">`
+    : ''
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <meta name="description" content="${escapeHtml(REPORT_EMBED_DESCRIPTION)}">
+  <meta property="og:title" content="${escapeHtml(REPORT_EMBED_TITLE)}">
+  <meta property="og:description" content="${escapeHtml(REPORT_EMBED_DESCRIPTION)}">
+  <meta property="og:image" content="${escapeHtml(REPORT_OG_URL)}">
+  <meta property="og:image:type" content="${escapeHtml(REPORT_OG_CONTENT_TYPE)}">
+  <meta property="og:image:width" content="${REPORT_OG_WIDTH}">
+  <meta property="og:image:height" content="${REPORT_OG_HEIGHT}">
+  <meta property="og:image:alt" content="${escapeHtml(REPORT_OG_ALT)}">
+  <meta name="twitter:card" content="summary">${refresh}
   <title>${escapeHtml(title)}</title>
   <style>
     :root {
@@ -358,6 +384,17 @@ function textarea(
       </div>`
 }
 
+export const REPORT_OAUTH_START = '/api/auth/discord?next=/report'
+
+export function renderReportStart(): string {
+  return headed(
+    'Report a player',
+    `<p class="lede">${REPORT_FORM_LEDE}</p>
+    <p class="actions"><a class="submit" href="${REPORT_OAUTH_START}">Continue to Discord.</a></p>`,
+    REPORT_OAUTH_START
+  )
+}
+
 export function renderReportForm(options: { error?: string; fields?: ReportFields } = {}): string {
   const fields = options.fields ?? emptyReportFields()
   const today = utcDateString()
@@ -376,7 +413,7 @@ export function renderReportForm(options: { error?: string; fields?: ReportField
   }).join('')
   const ackChecked = fields.acknowledged ? ' checked' : ''
 
-  return headed('Report a player', `<p class="lede">Report cheating in Karuta. Say what happened and who or where we should look. Required sections are marked with an asterisk.</p>
+  return headed('Report a player', `<p class="lede">${REPORT_FORM_LEDE}</p>
     ${error}
     <form class="form" id="report-form" method="post" action="/report" novalidate>
       <fieldset class="block">
