@@ -82,7 +82,7 @@ describe('report routes', () => {
     const page = await response.text()
     expect(page).toContain('property="og:title" content="Karuta report form"')
     expect(page).toContain(
-      'property="og:description" content="Report cheating in Karuta. Share what happened and who or where we should look. A false report is a permanent ban from this form."'
+      'property="og:description" content="Report cheating in Karuta. Share what happened and who or where we should look into. A false report is a permanent ban from this form."'
     )
     expect(page).toContain('href="/api/auth/discord?next=/report"')
     expect(page).toContain('0;url=/api/auth/discord?next=/report')
