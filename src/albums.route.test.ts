@@ -14,9 +14,6 @@ const snapshot: AlbumSnapshot = {
     quality: 0,
     version: 0
   }],
-  backgrounds: ['default', 'autumnleaves'],
-  emptyAlbum: 1,
-  emptyPage: 3
 }
 
 vi.mock('./firestore', async (importOriginal) => {
@@ -31,18 +28,6 @@ vi.mock('./firestore', async (importOriginal) => {
         return [{ id: 'natsu:1:2', data: { code: 'abc', metaCharacterId: 'natsu', edition: 1, number: 2 } }]
       }
       return []
-    },
-    getFirestoreDocument: async (_project: string, _account: string, path: string) => {
-      if (path.endsWith('/backgrounds/unlocked')) {
-        return { backgrounds: ['autumnleaves'] }
-      }
-      if (path.endsWith('/items/empty-album')) {
-        return { count: 1 }
-      }
-      if (path.endsWith('/items/empty-page')) {
-        return { count: 3 }
-      }
-      return null
     }
   }
 })
@@ -132,6 +117,13 @@ describe('album routes', () => {
     expect(page).toContain('window.__ALBUMS__')
     expect(page).toContain('natsu')
     expect(page).toContain('/images/characters/')
+    expect(page).toContain('alt="tester"')
+    expect(page).not.toContain('<span>tester</span>')
+    expect(page).toContain('Drag a card onto a slot to start an album.')
+    expect(page).toContain('ensureAlbum')
+    expect(page).toContain('backgroundKeys')
+    expect(page).toContain('abstractdragons')
+    expect(page).not.toContain('You can refresh again in a few minutes.')
   })
 
   it('reads D1 on later visits without requiring a new pull', async () => {
@@ -171,7 +163,9 @@ describe('album routes', () => {
     )
     expect(response.status).toBe(200)
     const body = await response.json() as { snapshot: AlbumSnapshot }
-    expect(body.snapshot.backgrounds).toContain('default')
-    expect(body.snapshot.backgrounds).toContain('autumnleaves')
+    expect(body.snapshot.albums[0]?.id).toBe('summer')
+    expect(body.snapshot.cards[0]?.code).toBe('abc')
+    expect(body.snapshot).not.toHaveProperty('backgrounds')
+    expect(body.snapshot).not.toHaveProperty('emptyAlbum')
   })
 })

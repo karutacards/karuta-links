@@ -79,7 +79,7 @@ export function renderAlbumEditor(
       <div class="bar-tools">
         <p class="script-note" id="refresh-note" hidden></p>
         <button type="button" class="ghost" id="refresh">Refresh</button>
-        <p class="session"><img class="face" src="${face}" alt="${name}" width="28" height="28" decoding="async" referrerpolicy="no-referrer"><span>${name}</span></p>
+        <p class="session"><img class="face" src="${face}" alt="${name}" width="28" height="28" decoding="async" referrerpolicy="no-referrer"></p>
       </div>
     </header>
     <main class="app" id="app" data-sheet="">
@@ -109,7 +109,7 @@ export function renderAlbumEditor(
         <div class="stage-tools">
           <div class="pages" id="pages" role="tablist" aria-label="Album pages"></div>
         </div>
-        <p class="stage-note" id="stage-note">Eight slots to a page. Drag a card onto a slot, or tap a card and then a slot.</p>
+        <p class="stage-note" id="stage-note">Drag a card onto a slot to start an album.</p>
       </section>
       <aside class="rail" id="rail" aria-label="Commands and backgrounds">
         <section class="panel script" id="script" aria-label="Karuta commands">

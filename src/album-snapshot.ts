@@ -1,4 +1,4 @@
-import { getFirestoreDocument, listFirestoreDocuments } from './firestore'
+import { listFirestoreDocuments } from './firestore'
 import {
   ALBUM_REFRESH_MS,
   DEFAULT_ALBUM_BACKGROUND,
@@ -66,10 +66,6 @@ function dyeHex(value: unknown): string | undefined {
   return dyeHex(asRecord(value).color)
 }
 
-function itemCount(doc: Record<string, unknown> | null): number {
-  return Math.max(0, Math.floor(asNumber(doc?.count)))
-}
-
 function parseInstanceKey(id: string): { character: string; edition: number; number: number } {
   const parts = id.split(':')
   return {
@@ -125,15 +121,12 @@ function compactAlbum(id: string, data: Record<string, unknown>): SnapshotAlbum 
 export function parseAlbumSnapshot(raw: string): AlbumSnapshot | null {
   try {
     const data = JSON.parse(raw) as Partial<AlbumSnapshot>
-    if (!Array.isArray(data.albums) || !Array.isArray(data.cards) || !Array.isArray(data.backgrounds)) {
+    if (!Array.isArray(data.albums) || !Array.isArray(data.cards)) {
       return null
     }
     return {
       albums: data.albums,
-      cards: data.cards,
-      backgrounds: data.backgrounds,
-      emptyAlbum: asNumber(data.emptyAlbum),
-      emptyPage: asNumber(data.emptyPage)
+      cards: data.cards
     }
   } catch {
     return null
@@ -170,22 +163,10 @@ export async function pullAlbumSnapshot(env: Env, discordId: string): Promise<Al
   }
   const projectId = env.FIRESTORE_PROJECT_ID
   const serviceAccount = env.FIRESTORE_SERVICE_ACCOUNT
-  const [albumRows, cardRows, unlocked, emptyAlbum, emptyPage] = await Promise.all([
+  const [albumRows, cardRows] = await Promise.all([
     listFirestoreDocuments(projectId, serviceAccount, `users/${discordId}/albums`),
-    listFirestoreDocuments(projectId, serviceAccount, `users/${discordId}/cards`),
-    getFirestoreDocument(projectId, serviceAccount, `users/${discordId}/backgrounds/unlocked`),
-    getFirestoreDocument(projectId, serviceAccount, `users/${discordId}/items/empty-album`),
-    getFirestoreDocument(projectId, serviceAccount, `users/${discordId}/items/empty-page`)
+    listFirestoreDocuments(projectId, serviceAccount, `users/${discordId}/cards`)
   ])
-  const unlockedKeys = Array.isArray(asRecord(unlocked).backgrounds)
-    ? (asRecord(unlocked).backgrounds as unknown[]).filter((item): item is string => typeof item === 'string' && item.length > 0)
-    : []
-  const backgrounds = [DEFAULT_ALBUM_BACKGROUND]
-  for (const key of unlockedKeys) {
-    if (!backgrounds.includes(key)) {
-      backgrounds.push(key)
-    }
-  }
   const cards: CompactCard[] = []
   for (const row of cardRows) {
     const card = compactCard(row.id, row.data)
@@ -195,10 +176,7 @@ export async function pullAlbumSnapshot(env: Env, discordId: string): Promise<Al
   }
   return {
     albums: albumRows.map((row) => compactAlbum(row.id, row.data)),
-    cards,
-    backgrounds,
-    emptyAlbum: itemCount(emptyAlbum),
-    emptyPage: itemCount(emptyPage)
+    cards
   }
 }
 

@@ -19,9 +19,6 @@ const snapshot: AlbumSnapshot = {
     background: 'default'
   }],
   cards: [card],
-  backgrounds: ['default', 'autumnleaves'],
-  emptyAlbum: 1,
-  emptyPage: 2
 }
 
 describe('albumCommandDiff', () => {

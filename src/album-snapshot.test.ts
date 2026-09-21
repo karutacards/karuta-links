@@ -54,10 +54,7 @@ describe('parseAlbumSnapshot', () => {
   it('accepts a compact payload', () => {
     const snapshot = {
       albums: [{ id: 'summer', cards: [null], background: 'default' }],
-      cards: [],
-      backgrounds: ['default'],
-      emptyAlbum: 2,
-      emptyPage: 4
+      cards: []
     }
     expect(parseAlbumSnapshot(JSON.stringify(snapshot))).toEqual(snapshot)
   })
@@ -65,6 +62,13 @@ describe('parseAlbumSnapshot', () => {
   it('rejects malformed JSON', () => {
     expect(parseAlbumSnapshot('{')).toBeNull()
     expect(parseAlbumSnapshot('{}')).toBeNull()
+    expect(parseAlbumSnapshot(JSON.stringify({
+      albums: [],
+      cards: [],
+      backgrounds: ['default'],
+      emptyAlbum: 2,
+      emptyPage: 4
+    }))).toEqual({ albums: [], cards: [] })
   })
 })
 

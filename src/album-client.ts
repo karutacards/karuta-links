@@ -46,6 +46,20 @@ export const ALBUM_CLIENT_SCRIPT = `
   }
   function bgName(key) { return names[key] || key; }
   function bgUrl(key) { return BG_ORIGIN + "/" + key + ".jpg"; }
+  function backgroundKeys() {
+    var keys = Object.keys(names);
+    var seen = {};
+    keys.forEach(function (key) { seen[key] = true; });
+    function add(key) {
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      keys.push(key);
+    }
+    (state.snapshot.backgrounds || []).forEach(add);
+    (state.snapshot.albums || []).forEach(function (item) { add(item.background); });
+    state.albums.forEach(function (item) { add(item.background); });
+    return keys;
+  }
   function portraitUrl(card) {
     var file = encodeURIComponent(card.character) + "-" + card.edition;
     if (card.version > 0) file = "versioned/" + file + "-" + card.version;
@@ -85,6 +99,21 @@ export const ALBUM_CLIENT_SCRIPT = `
     });
   }
   function album() { return state.albums[state.current]; }
+  function createAlbum() {
+    state.albums.push({
+      sourceId: null,
+      name: uniqueAlbumName(),
+      page: 1,
+      pages: 1,
+      slots: {},
+      background: DEFAULT_BG
+    });
+    state.current = state.albums.length - 1;
+    return album();
+  }
+  function ensureAlbum() {
+    return album() || createAlbum();
+  }
   function uniqueAlbumName() {
     var taken = {};
     state.albums.forEach(function (item) { taken[normalizeName(item.name)] = true; });
@@ -353,7 +382,7 @@ export const ALBUM_CLIENT_SCRIPT = `
     pagesEl.append(add);
   }
   function place(card, slot) {
-    var current = album();
+    var current = ensureAlbum();
     if (!current) return;
     Object.keys(current.slots).forEach(function (key) {
       if (current.slots[key].instanceKey === card.instanceKey) delete current.slots[key];
@@ -404,9 +433,8 @@ export const ALBUM_CLIENT_SCRIPT = `
             drag.ignoreClick = false;
             return;
           }
-          if (!current) return;
           if (state.held) place(state.held, next);
-          else if (current.slots[slotKey(current.page, next)]) {
+          else if (current && current.slots[slotKey(current.page, next)]) {
             delete current.slots[slotKey(current.page, next)];
           }
           render();
@@ -420,7 +448,7 @@ export const ALBUM_CLIENT_SCRIPT = `
     var query = state.bgQuery;
     var current = album();
     bgGrid.replaceChildren();
-    state.snapshot.backgrounds.filter(function (key) {
+    backgroundKeys().filter(function (key) {
       return !query || bgName(key).toLowerCase().indexOf(query) !== -1 || key.indexOf(query) !== -1;
     }).forEach(function (key) {
       var button = document.createElement("button");
@@ -429,8 +457,7 @@ export const ALBUM_CLIENT_SCRIPT = `
       if (current && current.background === key) button.classList.add("is-on");
       button.innerHTML = "<figure><img src=\\"" + bgUrl(key) + "\\" alt=\\"\\"><figcaption>" + bgName(key) + "</figcaption></figure>";
       button.addEventListener("click", function () {
-        if (!current) return;
-        current.background = key;
+        ensureAlbum().background = key;
         render();
       });
       bgGrid.append(button);
@@ -452,7 +479,7 @@ export const ALBUM_CLIENT_SCRIPT = `
     if (stageNote) {
       stageNote.textContent = current
         ? "Eight slots to a page. Drag a card onto a slot, or tap a card and then a slot."
-        : "Create an album to start a page.";
+        : "Drag a card onto a slot to start an album.";
     }
   }
   function refreshLabel() {
@@ -461,10 +488,8 @@ export const ALBUM_CLIENT_SCRIPT = `
     refreshBtn.disabled = state.refreshBusy || wait > 0;
     refreshBtn.textContent = state.refreshBusy ? "Refreshing" : "Refresh";
     if (refreshNote) {
-      refreshNote.textContent = state.refreshNote || (wait > 0
-        ? "You can refresh again in a few minutes."
-        : "");
-      refreshNote.hidden = !refreshNote.textContent;
+      refreshNote.textContent = state.refreshNote;
+      refreshNote.hidden = !state.refreshNote;
     }
   }
   function render() {
@@ -514,15 +539,7 @@ export const ALBUM_CLIENT_SCRIPT = `
   var newAlbum = document.getElementById("new-album");
   if (newAlbum) {
     newAlbum.addEventListener("click", function () {
-      state.albums.push({
-        sourceId: null,
-        name: uniqueAlbumName(),
-        page: 1,
-        pages: 1,
-        slots: {},
-        background: DEFAULT_BG
-      });
-      state.current = state.albums.length - 1;
+      createAlbum();
       render();
     });
   }

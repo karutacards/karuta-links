@@ -175,11 +175,11 @@ A machine client may read stored reports with `GET /api/v1/reports` and `GET /ap
 
 `/albums` is an unadvertised layout tool. It does not write to Karuta and it does not screenshot `k!a`. Unsigned `GET /albums` returns HTML, then starts OAuth back to `/albums`. The control is Continue to Discord, with no period. Signed visits use the same Discord identify cookie as `/report`. They do not use draft credential bars.
 
-The first signed-in visit with no D1 row pulls Firestore into one `album_snapshots` row keyed by Discord id: albums, a compact card index, unlocked backgrounds plus `default`, and `empty-album` / `empty-page` counts. Later `GET /albums` and `GET /api/v1/albums/snapshot` read D1 only. Refresh is an explicit control. `POST /albums/refresh` re-pulls that same set and is capped at once per 10 minutes from `fetched_at`. Logging in again does not bypass that cap. A first-ever snapshot is always allowed. A refresh inside the window is `429` with `Retry-After`.
+The first signed-in visit with no D1 row pulls Firestore into one `album_snapshots` row keyed by Discord id: albums and a compact card index. Later `GET /albums` and `GET /api/v1/albums/snapshot` read D1 only. Refresh is an explicit control. `POST /albums/refresh` re-pulls that same set and is capped at once per 10 minutes from `fetched_at`. Logging in again does not bypass that cap. A first-ever snapshot is always allowed. A refresh inside the window is `429` with `Retry-After`.
 
 Tiles are shared edition portraits from `/images/characters/{key}-{edition}.jpg` (the versioned path when the snapshot has a version) plus HTML chrome for the code, print number, edition and quality. The page is a CSS 4×2 grid on the shop background JPEG. The Worker does not call Karuta's `#/direct` or `#/album` renderer and does not invent player frames.
 
-The command script is a diff against the snapshot (`k!arename`, `k!aadd`, `k!aremove`, `k!apage`, `k!apageremove`, `k!abg`). A new name that is not in the snapshot starts with `k!acreate`. Card uniqueness is intra-album only. Background picks list `default` plus unlocked keys. English names come from a static shop catalog, not `production.json`.
+The command script is a diff against the snapshot (`k!arename`, `k!aadd`, `k!aremove`, `k!apage`, `k!apageremove`, `k!abg`). A new name that is not in the snapshot starts with `k!acreate`. Card uniqueness is intra-album only. The planner does not gate albums, pages or backgrounds on owned items. Karuta rejects a pasted command the player cannot spend. Background picks are the static shop catalog, not `production.json`.
 
 ## Non-goals
 

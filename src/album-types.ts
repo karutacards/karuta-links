@@ -18,9 +18,6 @@ export type SnapshotAlbum = {
 export type AlbumSnapshot = {
   albums: SnapshotAlbum[]
   cards: CompactCard[]
-  backgrounds: string[]
-  emptyAlbum: number
-  emptyPage: number
 }
 
 export type EditorAlbum = {

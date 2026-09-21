@@ -56,9 +56,8 @@ button, input { font: inherit; color: inherit; }
   border-radius: 50%;
   object-fit: cover;
 }
-.session span { color: var(--mute); font-size: 0.85rem; }
-.bar-tools { display: flex; align-items: center; gap: 0.55rem; }
-.bar-tools .script-note { margin: 0; text-align: right; max-width: 14rem; }
+.bar-tools { display: flex; align-items: center; flex-shrink: 0; gap: 0.55rem; }
+.bar-tools .script-note { margin: 0; }
 .app {
   display: grid;
   grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(15rem, 18rem);
@@ -158,7 +157,7 @@ button, input { font: inherit; color: inherit; }
   background: transparent;
   cursor: pointer;
 }
-.pick { text-align: left; }
+.pick { text-align: left; cursor: grab; touch-action: none; }
 .pick.is-used { opacity: 0.32; }
 .pick.is-held .portrait, .pick:hover .portrait { transform: translateY(-3px); }
 .portrait {
@@ -172,6 +171,7 @@ button, input { font: inherit; color: inherit; }
   transition: transform 160ms ease;
 }
 .chrome { pointer-events: none; }
+body.is-dragging { cursor: grabbing; }
 body.is-dragging .slot .tile { pointer-events: none; }
 .tile {
   position: relative;
