@@ -10,6 +10,7 @@ describe('classifyPath', () => {
     expect(classifyPath('/contests')).toEqual({ type: 'contestHome' })
     expect(classifyPath('/drafts/import')).toEqual({ type: 'draftImport' })
     expect(classifyPath('/report')).toEqual({ type: 'report' })
+    expect(classifyPath('/albums')).toEqual({ type: 'albums' })
     expect(classifyPath('/drafts/4')).toEqual({ type: 'draft', id: 4 })
   })
 
@@ -36,6 +37,7 @@ describe('classifyPath', () => {
   it('does not treat reserved or wrong-length segments as slugs', () => {
     expect(classifyPath('/static')).toEqual({ type: 'notFound' })
     expect(classifyPath('/report/1')).toEqual({ type: 'notFound' })
+    expect(classifyPath('/albums/1')).toEqual({ type: 'notFound' })
     expect(classifyPath('/health')).toEqual({ type: 'health' })
     expect(classifyPath('/abcde')).toEqual({ type: 'notFound' })
     expect(classifyPath('/abcdefg')).toEqual({ type: 'notFound' })

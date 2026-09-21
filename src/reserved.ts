@@ -1,4 +1,5 @@
 export const RESERVED_SEGMENTS = [
+  'albums',
   'api',
   'assets',
   'content',

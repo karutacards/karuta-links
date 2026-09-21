@@ -14,6 +14,8 @@ GET  /api/auth/*      -->  Discord identify (unadvertised)
 GET  /drafts/{id}     -->  OAuth-gated draft editor
 GET  /report          -->  OAuth-gated cheat-report form
 POST /report          -->  Validate and store a report in D1
+GET  /albums          -->  OAuth-gated album planner
+POST /albums/refresh  -->  Firestore re-pull, 10-minute cap
 GET  /api/v1/drafts/{id}/events -->  Draft audit cursor, presence, reviews
 POST /api/v1/drafts/{id}/review -->  Approve or reject a locked draft
 POST /api/v1/drafts   -->  Session cookie, not INGEST_TOKEN
@@ -26,7 +28,7 @@ karuta.today is a static Pages site. That model cannot accept writes. karuta.car
 
 ## Data
 
-Tables: `sequences`, `documents`, `slugs`, `contest_dumps`, `drafts`, `draft_entities`, `draft_audit`, `draft_presence`, `draft_reviews`, `reports`, `report_bans`. A dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`. `contest_dumps` records which Card Hunt `eventCounter` values already have a page. Drafts are mutable: one row per draft, one versioned entity per series or character, and an append-only audit stream that also records lock, unlock, description changes and importer creates. An imported entity keeps `import_action` and `base_aliases` so live rows export as updates. Open editors poll that stream and heartbeat `draft_presence`. A locked draft stores per-user import reviews on `draft_reviews` until unlock. Player cheat reports are append-only `reports` rows. `report_bans` blocks reporters from `/report`. There is no staff inbox in this Worker.
+Tables: `sequences`, `documents`, `slugs`, `contest_dumps`, `drafts`, `draft_entities`, `draft_audit`, `draft_presence`, `draft_reviews`, `reports`, `report_bans`, `album_snapshots`. A dump is an immutable JSON snapshot on `documents`. The matching short link is one row in `slugs`. `contest_dumps` records which Card Hunt `eventCounter` values already have a page. Drafts are mutable: one row per draft, one versioned entity per series or character, and an append-only audit stream that also records lock, unlock, description changes and importer creates. An imported entity keeps `import_action` and `base_aliases` so live rows export as updates. Open editors poll that stream and heartbeat `draft_presence`. A locked draft stores per-user import reviews on `draft_reviews` until unlock. Player cheat reports are append-only `reports` rows. `report_bans` blocks reporters from `/report`. There is no staff inbox in this Worker.
 
 Content-dump HTML uses same-origin `/images/cards/…` paths. Those objects are unframed edition art. The Worker reads private R2 `karuta-images` and falls back to Karuta's uncached CloudFront host on a miss.
 
@@ -42,7 +44,7 @@ Every minute the Worker reads `contests/card_hunt`. If `eventCounter` is greater
 
 A successful content ingest may also `waitUntil` GitHub `repository_dispatch` (`karuta-catalog-refresh`) so karuta.cards can refresh shared `karuta-data` R2 from S3. That uses `GITHUB_DISPATCH_TOKEN` and `CATALOG_DISPATCH_REPO`. A missing token or a failed dispatch does not change the ingest `201`. krta.cc does not pull or store `production.json`.
 
-Discord identify is wired and unadvertised. Start and callback routes live under `/api/auth`. A signed session cookie is issued when the Discord application credentials and a session signing key are set. Missing credentials return `503` on those two routes. `GET /api/auth/me` reports the cookie. `POST /api/auth/logout` clears it. Dumps stay public. There is no login control on dump HTML. Draft pages require a session and drafts.config.json. `/report` uses the same session cookie and the same credential bars. It does not read `drafts.config.json`. Form-bans are a separate D1 table.
+Discord identify is wired and unadvertised. Start and callback routes live under `/api/auth`. A signed session cookie is issued when the Discord application credentials and a session signing key are set. Missing credentials return `503` on those two routes. `GET /api/auth/me` reports the cookie. `POST /api/auth/logout` clears it. Dumps stay public. There is no login control on dump HTML. Draft pages require a session and drafts.config.json. `/report` uses the same session cookie and the same credential bars. It does not read `drafts.config.json`. Form-bans are a separate D1 table. `/albums` uses the same session cookie without those bars. The first visit pulls Firestore into `album_snapshots`; later loads read D1. Refresh is capped at once per 10 minutes.
 
 ## Rendering
 

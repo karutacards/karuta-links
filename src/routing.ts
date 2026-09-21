@@ -40,6 +40,9 @@ export function classifyPath(pathname: string): Route {
   if (path === '/report') {
     return { type: 'report' }
   }
+  if (path === '/albums') {
+    return { type: 'albums' }
+  }
 
   const segments = path.slice(1).split('/')
   if (segments.length === 2) {
@@ -88,6 +91,8 @@ export function describeRoute(route: Route): string {
       return 'draftImport'
     case 'report':
       return 'report'
+    case 'albums':
+      return 'albums'
     case 'draft':
       return `drafts/${route.id}`
     case 'document':

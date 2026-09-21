@@ -138,6 +138,7 @@ export type Route =
   | { type: 'contestHome' }
   | { type: 'draftImport' }
   | { type: 'report' }
+  | { type: 'albums' }
   | { type: 'draft'; id: number }
   | { type: 'document'; section: string; id: number }
   | { type: 'slug'; slug: string }

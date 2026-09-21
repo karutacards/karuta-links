@@ -160,7 +160,7 @@ export function safeDraftNext(raw: string | null): string | null {
   if (!raw) {
     return null
   }
-  if (raw === '/drafts/import' || raw === '/report') {
+  if (raw === '/drafts/import' || raw === '/report' || raw === '/albums') {
     return raw
   }
   if (/^\/drafts\/[1-9][0-9]*$/.test(raw)) {

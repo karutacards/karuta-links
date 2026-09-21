@@ -17,6 +17,7 @@ describe('session', () => {
     expect(safeDraftNext('/drafts/import')).toBe('/drafts/import')
     expect(safeDraftNext('/drafts/12')).toBe('/drafts/12')
     expect(safeDraftNext('/report')).toBe('/report')
+    expect(safeDraftNext('/albums')).toBe('/albums')
     expect(safeDraftNext('/drafts/01')).toBeNull()
     expect(safeDraftNext('/report/1')).toBeNull()
     expect(safeDraftNext('/')).toBeNull()

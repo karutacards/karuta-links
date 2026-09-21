@@ -5,6 +5,7 @@ import { getContestDocument, getDocument, insertContentDump, listRecentContests,
 import { renderContentDump, renderContestDump, renderContestHome, renderHome, renderNotFound } from './html'
 import { IngestError, MAX_INGEST_BYTES, parseContentSnapshot } from './ingest'
 import { ensureSnapshotImages, serveKeyedImage } from './images'
+import { registerAlbums } from './albums'
 import { registerDrafts } from './drafts'
 import { registerOAuth } from './oauth'
 import { registerReports } from './report'
@@ -15,6 +16,7 @@ export const app = new Hono<{ Bindings: Env }>()
 registerOAuth(app)
 registerDrafts(app)
 registerReports(app)
+registerAlbums(app)
 
 function html(body: string, status = 200): Response {
   return new Response(body, {

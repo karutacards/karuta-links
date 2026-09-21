@@ -26,6 +26,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/drafts/import` | OAuth-gated importer handshake. Accepts a catalog via `postMessage` |
 | `/drafts/{id}` | OAuth-gated collaborative draft editor |
 | `/report` | OAuth-gated cheat-report form (`GET` and `POST`) |
+| `/albums` | OAuth-gated album planner (`GET`). `POST /albums/refresh` re-pulls Firestore |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
 | `/api/v1/drafts` | Create a draft from a text catalog (`POST` only) |
@@ -38,7 +39,8 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/api/v1/drafts/{id}/unlock` | Unlock a draft (`POST`, admin list only) |
 | `/api/v1/drafts/{id}/restore` | Restore a draft to an Activity save (`POST`, admin list only) |
 | `/api/v1/drafts/{id}/export.txt` | KarutaImporter TXT for a locked draft (admin list only) |
-| `/api/auth/discord` | Start Discord identify. Optional `next` is `/drafts/import`, `/drafts/{id}` or `/report` |
+| `/api/v1/albums/snapshot` | Signed-in D1 album snapshot (`GET`) |
+| `/api/auth/discord` | Start Discord identify. Optional `next` is `/drafts/import`, `/drafts/{id}`, `/report` or `/albums` |
 | `/api/auth/callback` | Exchange the authorization code and set a session cookie |
 | `/api/auth/me` | Session probe. `{ authenticated: false }` or `{ authenticated: true, discordId, username }` |
 | `/api/auth/logout` | Clear the session cookie (`POST` only) |
@@ -46,7 +48,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/health` | Plain `ok` |
 | `/robots.txt` | Allow all |
 
-Reserved first segments: `api`, `assets`, `content`, `contests`, `drafts`, `favicon.ico`, `health`, `images`, `report`, `robots.txt`, `static`. Those names never become slugs.
+Reserved first segments: `albums`, `api`, `assets`, `content`, `contests`, `drafts`, `favicon.ico`, `health`, `images`, `report`, `robots.txt`, `static`. Those names never become slugs.
 
 Slugs are exactly six characters in `[a-z0-9]`. They point only at internal `/{section}/{id}` paths. There are no open redirects.
 
@@ -115,7 +117,7 @@ Contest dumps are not ingested over HTTP.
 
 Pages are public. Content-dump writes require the ingest token. A hard production publish from karuta-admin POSTs a dump. Soft and silent publishes skip that POST.
 
-Discord OAuth can issue a signed session cookie (`identify` only). The cookie includes a generation. Raising that number invalidates every outstanding session. It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes and `/report` require a session. A missing cookie starts OAuth and returns to `/drafts/import`, `/drafts/{id}` or `/report`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
+Discord OAuth can issue a signed session cookie (`identify` only). The cookie includes a generation. Raising that number invalidates every outstanding session. It does not gate dumps, ingest or public dump HTML. There is no Sign in control on those pages. Draft routes, `/report` and `/albums` require a session. A missing cookie starts OAuth and returns to `/drafts/import`, `/drafts/{id}`, `/report` or `/albums`. The registered redirects are only `https://krta.cc/api/auth/callback` and `http://127.0.0.1:8787/api/auth/callback`. Local wrangler presents `http://krta.cc` and maps that to the 127.0.0.1 callback. Missing Discord secrets return `503` on the start and callback routes. Ingest and dump pages keep working.
 
 ## Collaborative drafts
 
@@ -167,6 +169,16 @@ Signed report pages show the reporter's Discord avatar to the right of the headi
 
 `GET /report` renders the form. `POST /report` validates the same rules, stores one `reports` row in D1 and returns a thank-you page with a control back to the form. A validation error re-renders the form with one complete-sentence error. A reporter may submit 10 reports in one hour. An 11th in that window is `429`. The player-facing page does not name those limits. Staff add or remove `report_bans` rows with D1 SQL. There is no staff inbox and no webhook. Stored notes and the reporter Discord username are untrusted text. Escape them at every HTML output.
 
+## Album planner
+
+`/albums` is an unadvertised layout tool. It does not write to Karuta and it does not screenshot `k!a`. Unsigned `GET /albums` returns HTML, then starts OAuth back to `/albums`. The control is Continue to Discord, with no period. Signed visits use the same Discord identify cookie as `/report`. They do not use draft credential bars.
+
+The first signed-in visit with no D1 row pulls Firestore into one `album_snapshots` row keyed by Discord id: albums, a compact card index, unlocked backgrounds plus `default`, and `empty-album` / `empty-page` counts. Later `GET /albums` and `GET /api/v1/albums/snapshot` read D1 only. Refresh is an explicit control. `POST /albums/refresh` re-pulls that same set and is capped at once per 10 minutes from `fetched_at`. Logging in again does not bypass that cap. A first-ever snapshot is always allowed. A refresh inside the window is `429` with `Retry-After`.
+
+Tiles are shared edition portraits from `/images/characters/{key}-{edition}.jpg` (the versioned path when the snapshot has a version) plus HTML chrome for the code, print number, edition and quality. The page is a CSS 4×2 grid on the shop background JPEG. The Worker does not call Karuta's `#/direct` or `#/album` renderer and does not invent player frames.
+
+The command script is a diff against the snapshot (`k!arename`, `k!aadd`, `k!aremove`, `k!apage`, `k!apageremove`, `k!abg`). A new name that is not in the snapshot starts with `k!acreate`. Card uniqueness is intra-album only. Background picks list `default` plus unlocked keys. English names come from a static shop catalog, not `production.json`.
+
 ## Non-goals
 
 - Discord embed short URL
@@ -179,3 +191,6 @@ Signed report pages show the reporter's Discord avatar to the right of the headi
 - A staff report inbox
 - A report Discord webhook
 - A home-page link to `/report`
+- A home-page link to `/albums`
+- Live Karuta album writes
+- A per-card album renderer
