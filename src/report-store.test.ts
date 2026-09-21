@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { countRecentReports, insertReport, isReportBanned } from './report-store'
+import {
+  countRecentReports,
+  getReport,
+  insertReport,
+  isReportBanned,
+  listReports,
+  recordFromRow
+} from './report-store'
 import type { ReportPayload } from './report-validate'
 
 type Query = {
@@ -11,6 +18,8 @@ function mockDb(options: {
   banned?: boolean
   count?: number
   lastRowId?: number
+  row?: Record<string, unknown> | null
+  rows?: Record<string, unknown>[]
 }): { db: D1Database; queries: Query[] } {
   const queries: Query[] = []
   const db = {
@@ -29,7 +38,14 @@ function mockDb(options: {
           if (sql.includes('COUNT(*)')) {
             return { count: options.count ?? 0 }
           }
+          if (sql.includes('FROM reports') && sql.includes('WHERE id =')) {
+            return options.row ?? null
+          }
           return null
+        },
+        async all() {
+          queries.push({ sql, binds: statement.binds })
+          return { results: options.rows ?? [] }
         },
         async run() {
           queries.push({ sql, binds: statement.binds })
@@ -51,6 +67,22 @@ const payload: ReportPayload = {
   dyeCodes: [],
   idolCodes: [],
   offenseDates: ['2024-03-15'],
+  notes: 'Repeated snipes.'
+}
+
+const storedRow = {
+  id: 12,
+  created_at: 50,
+  reporter_id: '1',
+  reporter_username: 'tester',
+  reason: 'botting',
+  user_ids: '["135694375647838208"]',
+  server_ids: '[]',
+  channel_ids: '[]',
+  card_codes: '["Ab12C"]',
+  dye_codes: '[]',
+  idol_codes: '[]',
+  offense_dates: '["2024-03-15"]',
   notes: 'Repeated snipes.'
 }
 
@@ -81,5 +113,44 @@ describe('report store', () => {
     const insert = queries.find((query) => query.sql.includes('INSERT INTO reports'))
     expect(insert?.binds[4]).toBe('["135694375647838208"]')
     expect(insert?.binds[7]).toBe('["Ab12C"]')
+  })
+
+  it('maps a stored row and lists newest first', async () => {
+    const record = recordFromRow(storedRow)
+    expect(record).toEqual({
+      id: 12,
+      createdAt: 50,
+      reporterId: '1',
+      reporterUsername: 'tester',
+      reason: 'botting',
+      userIds: ['135694375647838208'],
+      serverIds: [],
+      channelIds: [],
+      cardCodes: ['Ab12C'],
+      dyeCodes: [],
+      idolCodes: [],
+      offenseDates: ['2024-03-15'],
+      notes: 'Repeated snipes.'
+    })
+    const listed = mockDb({ rows: [storedRow] })
+    const rows = await listReports(listed.db, { limit: 20 })
+    expect(rows).toHaveLength(1)
+    expect(listed.queries[0]?.binds).toEqual([20])
+    const paged = mockDb({ rows: [storedRow] })
+    await listReports(paged.db, { after: 40, limit: 10 })
+    expect(paged.queries[0]?.binds).toEqual([40, 10])
+  })
+
+  it('reads one report by id', async () => {
+    const { db, queries } = mockDb({ row: storedRow })
+    await expect(getReport(db, 12)).resolves.toMatchObject({ id: 12, notes: 'Repeated snipes.' })
+    expect(queries[0]?.binds).toEqual([12])
+    const missing = mockDb({ row: null })
+    await expect(getReport(missing.db, 99)).resolves.toBeNull()
+  })
+
+  it('rejects a corrupt stored row', () => {
+    expect(recordFromRow({ ...storedRow, reason: 'nope' })).toBeNull()
+    expect(recordFromRow({ ...storedRow, user_ids: 'not-json' })).toBeNull()
   })
 })

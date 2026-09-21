@@ -8,4 +8,6 @@ interface __BaseEnv_Env {
   GITHUB_DISPATCH_TOKEN?: string
   CATALOG_DISPATCH_REPO?: string
   DRAFT_WRITE: RateLimit
+  REPORT_REVIEW_TOKEN?: string
+  REPORT_REVIEW?: RateLimit
 }

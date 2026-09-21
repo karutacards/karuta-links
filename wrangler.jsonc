@@ -34,6 +34,14 @@
         "limit": 60,
         "period": 10
       }
+    },
+    {
+      "name": "REPORT_REVIEW",
+      "namespace_id": "1002",
+      "simple": {
+        "limit": 60,
+        "period": 10
+      }
     }
   ],
   "r2_buckets": [

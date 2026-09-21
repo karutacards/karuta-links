@@ -16,6 +16,7 @@ import {
   REPORT_OG_CONTENT_TYPE,
   REPORT_OG_PATH
 } from './report-og'
+import { registerReportReview } from './report-review'
 import {
   countRecentReports,
   insertReport,
@@ -78,6 +79,8 @@ async function gateReport(
 }
 
 export function registerReports(app: Hono<{ Bindings: Env }>): void {
+  registerReportReview(app)
+
   app.get(REPORT_OG_PATH, () => {
     return new Response(REPORT_OG_BYTES, {
       headers: {

@@ -167,7 +167,9 @@ The form is one page. The lede is Report cheating in Karuta. Share what happened
 
 Signed report pages show the reporter's Discord avatar to the right of the heading. The unsigned start page does not.
 
-`GET /report` renders the form. `POST /report` validates the same rules, stores one `reports` row in D1 and returns a thank-you page with a control back to the form. A validation error re-renders the form with one complete-sentence error. A reporter may submit 10 reports in one hour. An 11th in that window is `429`. The player-facing page does not name those limits. Staff add or remove `report_bans` rows with D1 SQL. There is no staff inbox and no webhook. Stored notes and the reporter Discord username are untrusted text. Escape them at every HTML output.
+`GET /report` renders the form. `POST /report` validates the same rules, stores one `reports` row in D1 and returns a thank-you page with a control back to the form. A validation error re-renders the form with one complete-sentence error. A reporter may submit 10 reports in one hour. An 11th in that window is `429`. The player-facing page does not name those limits. Staff add or remove `report_bans` rows with D1 SQL. Stored notes and the reporter Discord username are untrusted text. Escape them at every HTML output.
+
+A machine client may read stored reports with `GET /api/v1/reports` and `GET /api/v1/reports/{id}`. Those routes require a dedicated review bearer. They do not accept a player session cookie or the ingest bearer. The list is newest id first. `after` is an id cursor. `limit` defaults to 20 and caps at 50. A full page includes the next `after`. There is no mark-reviewed field and no write on those routes. A missing review secret is `503`. A missing or wrong bearer is `401`. Those routes share a 60-request-per-10-second Worker rate limit. Notes and usernames stay raw JSON strings.
 
 ## Album planner
 

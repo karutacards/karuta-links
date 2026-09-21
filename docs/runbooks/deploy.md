@@ -9,6 +9,7 @@ Production names are `karuta-links` for the Worker and the D1 database. `wrangle
 3. Put the returned `database_id` into `wrangler.jsonc`.
 4. Apply migrations: `pnpm run db:migrate:remote`.
 5. Set the ingest secret: `pnpm exec wrangler secret put INGEST_TOKEN`.
+5a. Set the report-review secret: `pnpm exec wrangler secret put REPORT_REVIEW_TOKEN`. Do not reuse the ingest value. Leave it unset to keep the review routes dark (`503`).
 6. Set Firestore secrets for the Card Hunt poll: `FIRESTORE_PROJECT_ID` and `FIRESTORE_SERVICE_ACCOUNT`. Use a read-only service account. Do not print the JSON.
 7. Optional catalog fan-out: `pnpm exec wrangler secret put GITHUB_DISPATCH_TOKEN`. Use a fine-grained PAT with `actions:write` on `karutacards/karuta-submissions` only. `wrangler.jsonc` already sets `CATALOG_DISPATCH_REPO` to that repo. Leave the token unset to skip the dispatch.
 8. Optional Discord OAuth: `pnpm exec wrangler secret put DISCORD_CLIENT_ID`, then `DISCORD_CLIENT_SECRET`, then `SESSION_SECRET`. Register `https://krta.cc/api/auth/callback` on that Discord application. Do not reuse karuta.cards secrets. Leave these unset if OAuth should stay dark.
