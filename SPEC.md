@@ -26,7 +26,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/drafts/import` | OAuth-gated importer handshake. Accepts a catalog via `postMessage` |
 | `/drafts/{id}` | OAuth-gated collaborative draft editor |
 | `/report` | OAuth-gated cheat-report form (`GET` and `POST`) |
-| `/albums` | OAuth-gated album planner (`GET`). `POST /albums/refresh` re-pulls Firestore |
+| `/albums` | Dark. `GET` and `POST /albums/refresh` return 503 |
 | `/{slug}` | 302 to `/{section}/{id}` when the slug exists |
 | `/api/v1/content` | Authenticated ingest (`POST` only) |
 | `/api/v1/drafts` | Create a draft from a text catalog (`POST` only) |
@@ -39,7 +39,7 @@ krta.cc stores Karuta dumps that do not present well in Discord. Sections are in
 | `/api/v1/drafts/{id}/unlock` | Unlock a draft (`POST`, admin list only) |
 | `/api/v1/drafts/{id}/restore` | Restore a draft to an Activity save (`POST`, admin list only) |
 | `/api/v1/drafts/{id}/export.txt` | KarutaImporter TXT for a locked draft (admin list only) |
-| `/api/v1/albums/snapshot` | Signed-in D1 album snapshot (`GET`) |
+| `/api/v1/albums/snapshot` | Dark. `GET` returns 503 |
 | `/api/auth/discord` | Start Discord identify. Optional `next` is `/drafts/import`, `/drafts/{id}`, `/report` or `/albums` |
 | `/api/auth/callback` | Exchange the authorization code and set a session cookie |
 | `/api/auth/me` | Session probe. `{ authenticated: false }` or `{ authenticated: true, discordId, username }` |
@@ -173,7 +173,7 @@ A machine client may read stored reports with `GET /api/v1/reports` and `GET /ap
 
 ## Album planner
 
-`/albums` is an unadvertised layout tool. It does not write to Karuta and it does not screenshot `k!a`. Unsigned `GET /albums` returns HTML, then starts OAuth back to `/albums`. The control is Continue to Discord, with no period. Signed visits use the same Discord identify cookie as `/report`. They do not use draft credential bars.
+`/albums` is an unadvertised layout tool. It is dark. `GET /albums`, `GET /api/v1/albums/snapshot` and `POST /albums/refresh` return 503 with "Album snapshots are unavailable." The `albums` segment stays reserved. Discord `next=/albums` still works; the callback lands on that 503. The planner code stays in-tree.
 
 The first signed-in visit with no D1 row pulls Firestore into one `album_snapshots` row keyed by Discord id: albums and a compact card index. Later `GET /albums` and `GET /api/v1/albums/snapshot` read D1 only. Refresh is an explicit control. `POST /albums/refresh` re-pulls that same set and is capped at once per 10 minutes from `fetched_at`. Logging in again does not bypass that cap. A first-ever snapshot is always allowed. A refresh inside the window is `429` with `Retry-After`.
 
