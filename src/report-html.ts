@@ -463,14 +463,14 @@ export function renderReportForm(
     <form class="form" id="report-form" method="post" action="/report" novalidate>
       <fieldset class="block">
         <legend class="visually-hidden">Why</legend>
-        <h2>Why are you reporting? <abbr class="req" title="required">*</abbr></h2>
+        <h2>Why are you reporting? <abbr class="req" title="Required">*</abbr></h2>
         <p class="help">Select the reportable offense. If reporting multiple offenses, split up the reports.</p>
         <ul class="reasons">${reasons}</ul>
       </fieldset>
       <fieldset class="block">
         <legend class="visually-hidden">Who or where</legend>
-        <h2>Who or where should we look? <abbr class="req" title="required">*</abbr></h2>
-        <p class="help">Add at least one Discord user, server, or channel ID. Each ID is a 17–19 digit snowflake. Turn on Developer Mode, then right-click the user, server, or channel and copy the ID. Separate several IDs with spaces or commas. Up to ${MAX_ID_COUNT} IDs in each field.</p>
+        <h2>Who or where should we look? <abbr class="req" title="Required">*</abbr></h2>
+        <p class="help">Add at least one Discord user, server or channel ID. Each ID is a 17–19 digit snowflake. Turn on Developer Mode, then right-click the user, server or channel and copy the ID. Separate several IDs with spaces or commas. Up to ${MAX_ID_COUNT} IDs in each field.</p>
         <div class="id-group">
           <div class="fields">
           ${textarea('user_ids', 'User IDs', fields.userIds, '135694375647838208', 'user-status', MAX_ID_COUNT, 'id-required')}
@@ -517,11 +517,11 @@ export function renderReportForm(
       </fieldset>
       <fieldset class="block">
         <legend class="visually-hidden">Confirm</legend>
-        <h2>Sign this report <abbr class="req" title="required">*</abbr></h2>
+        <h2>Sign this report <abbr class="req" title="Required">*</abbr></h2>
         <p class="help">A false report is a permanent ban from this form, the support server and later resources.</p>
         <label class="sign">
           <input type="checkbox" name="acknowledged" value="on" required${ackChecked}>
-          <span>I understand that falsely reporting a player will result in a permanent ban from the report form, the support server, and any future resources.</span>
+          <span>I understand that falsely reporting a player will result in a permanent ban from the report form, the support server and any future resources.</span>
         </label>
         <div class="actions">
           <button class="submit" id="report-submit" type="submit">Submit report</button>
@@ -645,7 +645,7 @@ export function renderReportForm(
             'Idol codes', true
           );
           if (!users.good && !servers.good && !channels.good) {
-            missing.push('a user, server, or channel ID');
+            missing.push('a user, server or channel ID');
           }
           if (users.bad || servers.bad || channels.bad) missing.push('valid Discord IDs');
           if (users.over || servers.over || channels.over) missing.push(maxIds + ' or fewer IDs in each field');
@@ -658,7 +658,7 @@ export function renderReportForm(
         }
         function joinList(items) {
           if (items.length === 1) return items[0];
-          return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
+          return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
         }
         function sync() {
           var missing = gaps();

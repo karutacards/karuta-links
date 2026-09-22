@@ -168,7 +168,7 @@ describe('report routes', () => {
       await allowedEnv()
     )
     expect(response.status).toBe(400)
-    expect(await response.text()).toContain('Enter at least one user ID, server ID, or channel ID.')
+    expect(await response.text()).toContain('Enter at least one user ID, server ID or channel ID.')
   })
 
   it('stores a valid report and thanks the reporter', async () => {

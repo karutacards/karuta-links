@@ -58,7 +58,7 @@ describe('report validation', () => {
     })
     expect(parseReportFields(fields({ userIds: '' }))).toMatchObject({
       error: true,
-      message: 'Enter at least one user ID, server ID, or channel ID.'
+      message: 'Enter at least one user ID, server ID or channel ID.'
     })
     expect(parseReportFields(fields({ acknowledged: false }))).toMatchObject({
       error: true,

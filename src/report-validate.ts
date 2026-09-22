@@ -245,7 +245,7 @@ export function parseReportFields(
   if ('error' in channelIds) return channelIds
 
   if (userIds.length === 0 && serverIds.length === 0 && channelIds.length === 0) {
-    return invalid(fields, 'Enter at least one user ID, server ID, or channel ID.')
+    return invalid(fields, 'Enter at least one user ID, server ID or channel ID.')
   }
 
   const cardCodes = parseCodes(
