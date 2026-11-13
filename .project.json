@@ -1,0 +1,5 @@
+{
+  "$schema": "https://raw.githubusercontent.com/CRASNY/eng-standards/main/layout/project.schema.json",
+  "name": "krtacc",
+  "remote": "required"
+}
