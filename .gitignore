@@ -23,3 +23,7 @@ coverage/
 .assets/
 .specstory/
 .cursor/plans/
+
+# Side folders kept inside the working copy. See eng-standards policies/host-layout.md.
+.state/
+.worktrees/
