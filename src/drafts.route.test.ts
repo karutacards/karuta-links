@@ -1,6 +1,11 @@
+import { Hono } from 'hono'
 import { afterEach, describe, expect, it } from 'vitest'
 import { app } from './app'
 import { resetBlacklistCache } from './draft-access'
+import { createDraft, mutateDraftEntity } from './draft-store'
+import { registerDrafts } from './drafts'
+import { draftsConfig } from './drafts-config'
+import { sqliteD1 } from './sqlite-d1.testing'
 import { createSessionCookie, newSession, parseCookies, NEXT_COOKIE } from './session'
 
 function testEnv(overrides: Partial<Env> = {}): Env {
@@ -123,6 +128,82 @@ describe('draft routes', () => {
     expect(await response.json()).toMatchObject({
       code: 'RATE_LIMITED',
       error: 'Too many draft actions. Wait a few seconds.'
+    })
+  })
+})
+
+async function emptyBlacklist(): Promise<R2Bucket> {
+  const bytes = await new Response(
+    new Blob([new TextEncoder().encode('[]')]).stream().pipeThrough(new CompressionStream('gzip'))
+  ).arrayBuffer()
+  return { get: async () => ({ arrayBuffer: async () => bytes }) } as unknown as R2Bucket
+}
+
+// A drafts app whose access gate lets everyone in, over a SQLite-backed D1.
+async function openDraftsApp() {
+  const drafts = new Hono<{ Bindings: Env }>()
+  registerDrafts(drafts, { gate: async () => ({ ok: true }) })
+  const { db } = sqliteD1()
+  const adminId = draftsConfig.adminIds[0] ?? ''
+  const cookie = await createSessionCookie(newSession(adminId, 'admin'), 'test-session-secret', false)
+  const env = testEnv({ DB: db, KARUTA_DATA: await emptyBlacklist() })
+  return { drafts, db, adminId, env, cookie: cookie.split(';')[0] ?? '' }
+}
+
+describe('draft routes over SQLite', () => {
+  it('refuses an oversized import even without a Content-Length header', async () => {
+    const { drafts, env, cookie } = await openDraftsApp()
+    const chunk = new TextEncoder().encode('x'.repeat(64 * 1024))
+    let sent = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 20) {
+          controller.close()
+          return
+        }
+        sent += 1
+        controller.enqueue(chunk)
+      }
+    })
+    const response = await drafts.request('http://127.0.0.1:8787/api/v1/drafts', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'content-type': 'application/json' },
+      body,
+      duplex: 'half'
+    } as RequestInit, env)
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ code: 'TOO_LARGE' })
+  })
+
+  it('restores by save id and no longer accepts an event id', async () => {
+    const { drafts, db, adminId, env, cookie } = await openDraftsApp()
+    const draft = await createDraft(db, { series: [{ name: 'Naruto' }] }, adminId, 'admin', 10)
+    const saved = await mutateDraftEntity(db, draft.id, {
+      type: 'series',
+      action: 'update',
+      key: 'naruto',
+      expectedRevision: 1,
+      name: 'Naruto Shippuden'
+    }, adminId, 'admin', 20)
+    await mutateDraftEntity(db, draft.id, {
+      type: 'series',
+      action: 'update',
+      key: 'naruto',
+      expectedRevision: 2,
+      name: 'Boruto'
+    }, adminId, 'admin', 30)
+    const restore = (payload: unknown) => drafts.request(`http://127.0.0.1:8787/api/v1/drafts/${draft.id}/restore`, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    }, env)
+    const byEvent = await restore({ eventId: saved.saveId })
+    expect(byEvent.status).toBe(400)
+    const bySave = await restore({ saveId: saved.saveId })
+    expect(bySave.status).toBe(200)
+    expect(await bySave.json()).toMatchObject({
+      restored: true,
+      series: [{ name: 'Naruto Shippuden', revision: 4 }]
     })
   })
 })

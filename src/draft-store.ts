@@ -1,4 +1,4 @@
-import { parseDraftCatalog } from './draft-catalog'
+import { draftKey, parseDraftCatalog } from './draft-catalog'
 import { assertDraftFontText } from './draft-glyphs'
 import { discordAvatarUrl, parseDiscordAvatar } from './discord-avatar'
 import { sortDraftEntities } from './draft-sort'
@@ -6,9 +6,10 @@ import { actorName, draftAuditSentence, draftAuditSpans } from './draft-audit'
 import {
   catalogsMatch,
   isSaveAuditAction,
-  lastEventIdForSave,
   replayDraftAudit,
-  restoreIdentityFromCatalog
+  restoreIdentityFromCatalog,
+  type DraftRestoreCharacter,
+  type DraftRestoreSeries
 } from './draft-restore'
 import { applyDraftMutation, type DraftMutation } from './draft-mutation'
 import { parseDraftAccessOverride, type DraftAccessOverride } from './drafts-config'
@@ -34,6 +35,30 @@ import {
 export const PRESENCE_STALE_MS = 10_000
 
 export const MAX_DRAFT_DESCRIPTION = 1_000
+
+// A client may keep adding to its own save for this long after that save's last event.
+// After that, or for anyone else's save, the write starts a new save.
+export const SAVE_REUSE_WINDOW_MS = 5 * 60_000
+
+// Rows are written in chunks of JSON passed as one bound value, so a large import or
+// restore is a few dozen statements instead of one statement per row. A chunk stays well
+// under D1's 2 MB value limit even when every character is a three-byte glyph.
+const CHUNK_MAX_CHARS = 400_000
+const CHUNK_MAX_ROWS = 500
+
+// SQL condition, with one bound draft id, that holds while the draft is unlocked.
+const DRAFT_UNLOCKED = `EXISTS (SELECT 1 FROM drafts WHERE id = ? AND locked_at IS NULL)`
+
+type SqlGuard = { sql: string; binds: unknown[] }
+
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Error && /UNIQUE constraint failed/i.test(error.message)
+}
+
+function changesOf(outcome: unknown): number | undefined {
+  const meta = (outcome as { meta?: { changes?: unknown } } | undefined)?.meta
+  return typeof meta?.changes === 'number' ? meta.changes : undefined
+}
 
 type DraftRow = {
   id: number
@@ -184,6 +209,83 @@ function entityPayload(
   })
 }
 
+function jsonChunks<T>(rows: readonly T[], encode: (row: T) => unknown): string[] {
+  const chunks: string[] = []
+  let current: string[] = []
+  let size = 0
+  for (const row of rows) {
+    const item = JSON.stringify(encode(row))
+    if (current.length && (current.length >= CHUNK_MAX_ROWS || size + item.length > CHUNK_MAX_CHARS)) {
+      chunks.push(`[${current.join(',')}]`)
+      current = []
+      size = 0
+    }
+    current.push(item)
+    size += item.length + 1
+  }
+  if (current.length) chunks.push(`[${current.join(',')}]`)
+  return chunks
+}
+
+// Inserts whole entity rows from JSON chunks. With a guard, each chunk writes only while
+// the guard holds, so a batch whose guard fails writes nothing.
+function insertEntityStatements(
+  db: D1Database,
+  draftId: number,
+  rows: readonly { entity: DraftEntity | DraftRestoreSeries | DraftRestoreCharacter; revision: number }[],
+  editorId: string,
+  editorName: string,
+  guard: SqlGuard | null = null
+): D1PreparedStatement[] {
+  const chunks = jsonChunks(rows, ({ entity, revision }) => ({
+    type: entity.type,
+    key: entity.key,
+    name: entity.name,
+    seriesKey: entity.type === 'character' ? entity.seriesKey : null,
+    aliases: JSON.stringify(entity.aliases),
+    importAction: entity.importAction,
+    baseAliases: JSON.stringify(entity.baseAliases),
+    revision
+  }))
+  return chunks.map((chunk) => db.prepare(
+    `INSERT INTO draft_entities
+     (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+      base_aliases, revision, last_editor_id, last_editor_name)
+     SELECT ?, json_extract(value, '$.type'), json_extract(value, '$.key'),
+            json_extract(value, '$.name'), json_extract(value, '$.seriesKey'),
+            json_extract(value, '$.aliases'), json_extract(value, '$.importAction'),
+            json_extract(value, '$.baseAliases'), json_extract(value, '$.revision'), ?, ?
+     FROM json_each(?)
+     ${guard ? `WHERE ${guard.sql}` : ''}
+     ORDER BY key`
+  ).bind(draftId, editorId, editorName, chunk, ...(guard?.binds ?? [])))
+}
+
+function importAuditStatements(
+  db: D1Database,
+  draftId: number,
+  entities: readonly DraftEntity[],
+  series: readonly { key: string; name: string }[],
+  editorId: string,
+  editorName: string,
+  now: number
+): D1PreparedStatement[] {
+  const chunks = jsonChunks(entities, (entity) => ({
+    type: entity.type,
+    key: entity.key,
+    payload: entityPayload(entity, series)
+  }))
+  return chunks.map((chunk) => db.prepare(
+    `INSERT INTO draft_audit
+     (draft_id, entity_type, entity_key, action, before_json, after_json,
+      discord_id, username, created_at)
+     SELECT ?, json_extract(value, '$.type'), json_extract(value, '$.key'), 'import',
+            NULL, json_extract(value, '$.payload'), ?, ?, ?
+     FROM json_each(?)
+     ORDER BY key`
+  ).bind(draftId, editorId, editorName, now, chunk))
+}
+
 
 function parseStoredAccessOverride(raw: string | null | undefined): DraftAccessOverride | null {
   if (!raw) return null
@@ -241,22 +343,36 @@ function toAuditRow(row: AuditDbRow): DraftAuditRow {
   }
 }
 
+// A client may name the save it is adding to. The write joins that save only when every
+// event in it is this editor's and its last event is recent. Otherwise it starts a new
+// save, so nobody can stretch someone else's save, or an old one, over their own edits.
 async function resolveSaveId(
   db: D1Database,
   draftId: number,
-  requested: number | null
+  requested: number | null,
+  editorId: string,
+  now: number
 ): Promise<number> {
   if (requested == null) return allocateId(db, DRAFT_SAVES_SECTION)
   if (!Number.isSafeInteger(requested) || requested < 1) {
     throw new DraftError('INVALID_INPUT', 'Save id must be a positive integer.', 400)
   }
   const row = await db.prepare(
-    `SELECT 1 AS ok FROM draft_audit WHERE draft_id = ? AND save_id = ? LIMIT 1`
-  ).bind(draftId, requested).first()
-  if (!row) {
-    throw new DraftError('INVALID_INPUT', 'That save does not exist on this draft.', 400)
-  }
-  return requested
+    `SELECT COUNT(*) AS events,
+            SUM(CASE WHEN discord_id = ? THEN 0 ELSE 1 END) AS others,
+            MAX(created_at) AS last_at
+     FROM draft_audit
+     WHERE draft_id = ? AND save_id = ?`
+  ).bind(editorId, draftId, requested).first<{
+    events: number | null
+    others: number | null
+    last_at: number | null
+  }>()
+  const reusable = Boolean(row?.events)
+    && !row?.others
+    && row?.last_at != null
+    && now - row.last_at <= SAVE_REUSE_WINDOW_MS
+  return reusable ? requested : allocateId(db, DRAFT_SAVES_SECTION)
 }
 
 function toAuditEvent(
@@ -281,91 +397,48 @@ export async function createDraft(
 ): Promise<DraftRecord> {
   const parsed = parseDraftCatalog(catalog)
   const id = await allocateId(db, DRAFT_SECTION)
-  const statements = [
+  const series: DraftSeries[] = parsed.series.map((item) => {
+    const importAction = item.action ?? 'add'
+    const aliases = item.aliases ?? []
+    return {
+      type: 'series',
+      key: item.key,
+      name: item.name,
+      aliases,
+      importAction,
+      baseAliases: importAction === 'update' ? aliases : [],
+      revision: 1,
+      lastEditorId: editorId,
+      lastEditorName: editorName
+    }
+  })
+  const characters: DraftCharacter[] = parsed.characters.map((item) => {
+    const importAction = item.action ?? 'add'
+    const aliases = item.aliases ?? []
+    return {
+      type: 'character',
+      key: item.key,
+      name: item.name,
+      seriesKey: item.seriesKey,
+      aliases,
+      importAction,
+      baseAliases: importAction === 'update' ? aliases : [],
+      revision: 1,
+      lastEditorId: editorId,
+      lastEditorName: editorName
+    }
+  })
+  const rows = (entities: readonly DraftEntity[]) => entities.map((entity) => ({ entity, revision: 1 }))
+  await db.batch([
     db.prepare(
       `INSERT INTO drafts (id, created_at, updated_at, locked_at, locked_by)
        VALUES (?, ?, ?, NULL, NULL)`
-    ).bind(id, now, now)
-  ]
-  for (const series of parsed.series) {
-    const importAction = series.action ?? 'add'
-    const aliases = series.aliases ?? []
-    const entity: DraftSeries = {
-      type: 'series',
-      key: series.key,
-      name: series.name,
-      aliases,
-      importAction,
-      baseAliases: importAction === 'update' ? aliases : [],
-      revision: 1,
-      lastEditorId: editorId,
-      lastEditorName: editorName
-    }
-    statements.push(
-      db.prepare(
-        `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
-          base_aliases, revision, last_editor_id, last_editor_name)
-         VALUES (?, 'series', ?, ?, NULL, ?, ?, ?, 1, ?, ?)`
-      ).bind(
-        id,
-        entity.key,
-        entity.name,
-        JSON.stringify(entity.aliases),
-        entity.importAction,
-        JSON.stringify(entity.baseAliases),
-        editorId,
-        editorName
-      ),
-      db.prepare(
-        `INSERT INTO draft_audit
-         (draft_id, entity_type, entity_key, action, before_json, after_json,
-          discord_id, username, created_at)
-         VALUES (?, 'series', ?, 'import', NULL, ?, ?, ?, ?)`
-      ).bind(id, entity.key, entityPayload(entity, parsed.series), editorId, editorName, now)
-    )
-  }
-  for (const character of parsed.characters) {
-    const importAction = character.action ?? 'add'
-    const aliases = character.aliases ?? []
-    const entity: DraftCharacter = {
-      type: 'character',
-      key: character.key,
-      name: character.name,
-      seriesKey: character.seriesKey,
-      aliases,
-      importAction,
-      baseAliases: importAction === 'update' ? aliases : [],
-      revision: 1,
-      lastEditorId: editorId,
-      lastEditorName: editorName
-    }
-    statements.push(
-      db.prepare(
-        `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
-          base_aliases, revision, last_editor_id, last_editor_name)
-         VALUES (?, 'character', ?, ?, ?, ?, ?, ?, 1, ?, ?)`
-      ).bind(
-        id,
-        entity.key,
-        entity.name,
-        entity.seriesKey,
-        JSON.stringify(entity.aliases),
-        entity.importAction,
-        JSON.stringify(entity.baseAliases),
-        editorId,
-        editorName
-      ),
-      db.prepare(
-        `INSERT INTO draft_audit
-         (draft_id, entity_type, entity_key, action, before_json, after_json,
-          discord_id, username, created_at)
-         VALUES (?, 'character', ?, 'import', NULL, ?, ?, ?, ?)`
-      ).bind(id, entity.key, entityPayload(entity, parsed.series), editorId, editorName, now)
-    )
-  }
-  await db.batch(statements)
+    ).bind(id, now, now),
+    ...insertEntityStatements(db, id, rows(series), editorId, editorName),
+    ...importAuditStatements(db, id, series, parsed.series, editorId, editorName, now),
+    ...insertEntityStatements(db, id, rows(characters), editorId, editorName),
+    ...importAuditStatements(db, id, characters, parsed.series, editorId, editorName, now)
+  ])
   const created = await getDraft(db, id)
   if (!created) {
     throw new Error('Failed to read the created draft.')
@@ -517,21 +590,32 @@ export async function setDraftReview(
   if (!draft) {
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
+  const notLocked = () => new DraftError('LOCKED', 'Lock this draft before reviewing it.', 409)
   if (!draft.locked_at) {
-    throw new DraftError('LOCKED', 'Lock this draft before reviewing it.', 409)
+    throw notLocked()
   }
-  if (decision === null) {
-    await db.prepare(
-      `DELETE FROM draft_reviews WHERE draft_id = ? AND discord_id = ?`
-    ).bind(draftId, editorId).run()
-  } else {
-    await db.prepare(
+  // The lock condition sits in the write itself, so an unlock that lands after the read
+  // above cannot leave a review on an unlocked draft.
+  const locked = `EXISTS (SELECT 1 FROM drafts WHERE id = ? AND locked_at IS NOT NULL)`
+  const outcome = decision === null
+    ? await db.prepare(
+      `DELETE FROM draft_reviews WHERE draft_id = ? AND discord_id = ? AND ${locked}`
+    ).bind(draftId, editorId, draftId).run()
+    : await db.prepare(
       `INSERT INTO draft_reviews (draft_id, discord_id, username, decision, updated_at)
-       VALUES (?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ? WHERE ${locked}
        ON CONFLICT(draft_id, discord_id)
        DO UPDATE SET username = excluded.username, decision = excluded.decision,
                      updated_at = excluded.updated_at`
-    ).bind(draftId, editorId, editorName, decision, now).run()
+    ).bind(draftId, editorId, editorName, decision, now, draftId).run()
+  if (changesOf(outcome) === 0) {
+    const latest = await getDraftRow(db, draftId)
+    if (!latest) {
+      throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+    }
+    if (!latest.locked_at) {
+      throw notLocked()
+    }
   }
   return listDraftReviews(db, draftId)
 }
@@ -614,9 +698,10 @@ export async function mutateDraftEntity(
     throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
   }
   assertUnlocked(draft)
-  const key = mutation.action === 'add'
-    ? (mutation.key?.trim() || '')
-    : (mutation.key?.trim() ?? '')
+  // An added key follows the import rule, so `Naruto Shippuden` and `naruto-shippuden`
+  // name the same row. Update and delete name a stored key exactly.
+  const rawKey = mutation.key?.trim() ?? ''
+  const key = mutation.action === 'add' && rawKey ? draftKey(rawKey) : rawKey
   if (mutation.action !== 'add' && !key) {
     throw new DraftError('INVALID_INPUT', 'Key is required.', 400)
   }
@@ -659,52 +744,63 @@ export async function mutateDraftEntity(
     draftCharacters,
     reservedSeriesKeys
   )
-  const batchSaveId = await resolveSaveId(db, draftId, saveId)
+  const batchSaveId = await resolveSaveId(db, draftId, saveId, editorId, now)
+  // Every statement carries the same guard: the draft is still unlocked and, for an update
+  // or delete, the entity still has the revision this write was built from. D1 runs a
+  // batch as one transaction, so either the guard holds for every statement or none of
+  // them writes. The one statement that changes what the guard checks runs last.
+  const guard: SqlGuard = current
+    ? {
+        sql: `${DRAFT_UNLOCKED} AND EXISTS (
+          SELECT 1 FROM draft_entities
+          WHERE draft_id = ? AND entity_type = ? AND entity_key = ? AND revision = ?)`,
+        binds: [draftId, draftId, current.type, current.key, current.revision]
+      }
+    : { sql: DRAFT_UNLOCKED, binds: [draftId] }
   const statements = [
-    db.prepare(`UPDATE drafts SET updated_at = ? WHERE id = ?`).bind(now, draftId)
+    db.prepare(
+      `UPDATE drafts SET updated_at = ? WHERE id = ? AND ${guard.sql}`
+    ).bind(now, draftId, ...guard.binds)
   ]
-  if (result.action === 'delete' && current) {
+  if (result.action === 'delete' && current?.type === 'series') {
+    // The series' characters go with it. They are read inside the batch, so a character
+    // added after this request started is deleted and logged like the rest.
     statements.push(
       db.prepare(
-        `DELETE FROM draft_entities
-         WHERE draft_id = ? AND entity_type = ? AND entity_key = ? AND revision = ?`
-      ).bind(draftId, current.type, current.key, current.revision)
-    )
-    if (current.type === 'series') {
-      const childRows = await db.prepare(
-        `SELECT entity_type, entity_key, name, series_key, aliases, import_action,
-                base_aliases, revision, last_editor_id, last_editor_name
+        `INSERT INTO draft_audit
+         (draft_id, entity_type, entity_key, action, before_json, after_json,
+          discord_id, username, created_at, save_id)
+         SELECT ?, 'character', entity_key, 'delete',
+                json_object(
+                  'type', 'character',
+                  'key', entity_key,
+                  'name', name,
+                  'seriesKey', COALESCE(series_key, ''),
+                  'seriesName', ?,
+                  'aliases', json(aliases),
+                  'importAction', CASE WHEN import_action = 'update' THEN 'update' ELSE 'add' END,
+                  'baseAliases', json(COALESCE(base_aliases, '[]'))
+                ),
+                NULL, ?, ?, ?, ?
          FROM draft_entities
-         WHERE draft_id = ? AND entity_type = 'character' AND series_key = ?`
-      ).bind(draftId, current.key).all<EntityRow>()
-      const seriesRefs = [{ key: current.key, name: current.name }]
-      for (const row of childRows.results ?? []) {
-        const child = rowToEntity(row)
-        statements.push(
-          db.prepare(
-            `DELETE FROM draft_entities
-             WHERE draft_id = ? AND entity_type = ? AND entity_key = ?`
-          ).bind(draftId, child.type, child.key)
-        )
-        statements.push(
-          db.prepare(
-            `INSERT INTO draft_audit
-             (draft_id, entity_type, entity_key, action, before_json, after_json,
-              discord_id, username, created_at, save_id)
-             VALUES (?, ?, ?, 'delete', ?, NULL, ?, ?, ?, ?)`
-          ).bind(
-            draftId,
-            child.type,
-            child.key,
-            entityPayload(child, seriesRefs),
-            editorId,
-            editorName,
-            now,
-            batchSaveId
-          )
-        )
-      }
-    }
+         WHERE draft_id = ? AND entity_type = 'character' AND series_key = ? AND ${guard.sql}
+         ORDER BY entity_key`
+      ).bind(
+        draftId,
+        current.name,
+        editorId,
+        editorName,
+        now,
+        batchSaveId,
+        draftId,
+        current.key,
+        ...guard.binds
+      ),
+      db.prepare(
+        `DELETE FROM draft_entities
+         WHERE draft_id = ? AND entity_type = 'character' AND series_key = ? AND ${guard.sql}`
+      ).bind(draftId, current.key, ...guard.binds)
+    )
   }
   if (result.adoptedSeries) {
     const series = result.adoptedSeries
@@ -714,7 +810,8 @@ export async function mutateDraftEntity(
         `INSERT INTO draft_entities
          (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
           base_aliases, revision, last_editor_id, last_editor_name)
-         VALUES (?, 'series', ?, ?, NULL, ?, ?, ?, 1, ?, ?)`
+         SELECT ?, 'series', ?, ?, NULL, ?, ?, ?, 1, ?, ?
+         WHERE ${guard.sql}`
       ).bind(
         draftId,
         series.key,
@@ -723,13 +820,15 @@ export async function mutateDraftEntity(
         series.importAction,
         JSON.stringify(series.baseAliases),
         editorId,
-        editorName
+        editorName,
+        ...guard.binds
       ),
       db.prepare(
         `INSERT INTO draft_audit
          (draft_id, entity_type, entity_key, action, before_json, after_json,
           discord_id, username, created_at, save_id)
-         VALUES (?, 'series', ?, 'add', NULL, ?, ?, ?, ?, ?)`
+         SELECT ?, 'series', ?, 'add', NULL, ?, ?, ?, ?, ?
+         WHERE ${guard.sql}`
       ).bind(
         draftId,
         series.key,
@@ -737,49 +836,8 @@ export async function mutateDraftEntity(
         editorId,
         editorName,
         now,
-        batchSaveId
-      )
-    )
-  }
-  if (result.entity && result.action === 'add') {
-    statements.push(
-      db.prepare(
-        `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
-          base_aliases, revision, last_editor_id, last_editor_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        draftId,
-        result.entity.type,
-        result.entity.key,
-        result.entity.name,
-        result.entity.type === 'character' ? result.entity.seriesKey : null,
-        JSON.stringify(result.entity.aliases),
-        result.entity.importAction,
-        JSON.stringify(result.entity.baseAliases),
-        result.entity.revision,
-        editorId,
-        editorName
-      )
-    )
-  } else if (result.entity && current) {
-    statements.push(
-      db.prepare(
-        `UPDATE draft_entities
-         SET name = ?, series_key = ?, aliases = ?, revision = ?,
-             last_editor_id = ?, last_editor_name = ?
-         WHERE draft_id = ? AND entity_type = ? AND entity_key = ? AND revision = ?`
-      ).bind(
-        result.entity.name,
-        result.entity.type === 'character' ? result.entity.seriesKey : null,
-        JSON.stringify(result.entity.aliases),
-        result.entity.revision,
-        editorId,
-        editorName,
-        draftId,
-        current.type,
-        current.key,
-        current.revision
+        batchSaveId,
+        ...guard.binds
       )
     )
   }
@@ -791,7 +849,8 @@ export async function mutateDraftEntity(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
         discord_id, username, created_at, save_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE ${guard.sql}`
     ).bind(
       draftId,
       mutation.type,
@@ -802,12 +861,88 @@ export async function mutateDraftEntity(
       editorId,
       editorName,
       now,
-      batchSaveId
+      batchSaveId,
+      ...guard.binds
     )
   )
-  const outcomes = await db.batch(statements)
-  const write = result.adoptedSeries ? outcomes[3] : outcomes[1]
-  if (result.action !== 'add' && write && 'meta' in write && write.meta.changes === 0) {
+  if (result.entity && result.action === 'add') {
+    statements.push(
+      db.prepare(
+        `INSERT INTO draft_entities
+         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
+          base_aliases, revision, last_editor_id, last_editor_name)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE ${guard.sql}`
+      ).bind(
+        draftId,
+        result.entity.type,
+        result.entity.key,
+        result.entity.name,
+        result.entity.type === 'character' ? result.entity.seriesKey : null,
+        JSON.stringify(result.entity.aliases),
+        result.entity.importAction,
+        JSON.stringify(result.entity.baseAliases),
+        result.entity.revision,
+        editorId,
+        editorName,
+        ...guard.binds
+      )
+    )
+  } else if (result.entity && current) {
+    statements.push(
+      db.prepare(
+        `UPDATE draft_entities
+         SET name = ?, series_key = ?, aliases = ?, revision = ?,
+             last_editor_id = ?, last_editor_name = ?
+         WHERE draft_id = ? AND entity_type = ? AND entity_key = ? AND revision = ?
+           AND ${DRAFT_UNLOCKED}`
+      ).bind(
+        result.entity.name,
+        result.entity.type === 'character' ? result.entity.seriesKey : null,
+        JSON.stringify(result.entity.aliases),
+        result.entity.revision,
+        editorId,
+        editorName,
+        draftId,
+        current.type,
+        current.key,
+        current.revision,
+        draftId
+      )
+    )
+  } else if (result.action === 'delete' && current) {
+    statements.push(
+      db.prepare(
+        `DELETE FROM draft_entities
+         WHERE draft_id = ? AND entity_type = ? AND entity_key = ? AND revision = ?
+           AND ${DRAFT_UNLOCKED}`
+      ).bind(draftId, current.type, current.key, current.revision, draftId)
+    )
+  }
+  let outcomes: unknown[]
+  try {
+    outcomes = await db.batch(statements)
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error
+    // Two people added the same key, or adopted the same new series, at the same time.
+    const latest = result.entity
+      ? await getEntityRow(db, draftId, result.entity.type, result.entity.key)
+      : null
+    throw new DraftError(
+      'CONFLICT',
+      latest
+        ? 'Someone else already added this entity.'
+        : 'Someone else added this at the same time. Reload and try again.',
+      409,
+      latest ? rowToEntity(latest) : null
+    )
+  }
+  if (changesOf(outcomes[0]) === 0) {
+    const latestDraft = await getDraftRow(db, draftId)
+    if (!latestDraft) {
+      throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+    }
+    assertUnlocked(latestDraft)
     const latest = key ? await getEntityRow(db, draftId, mutation.type, key) : null
     throw new DraftError(
       latest ? 'CONFLICT' : 'ENTITY_GONE',
@@ -847,19 +982,24 @@ async function writeLockAudit(
   lockedBy: string | null,
   hiddenAt: number | null
 ): Promise<DraftRecord> {
+  // Two admins pressing Lock at once write one lock. The state change runs last, so the
+  // audit row and the review reset see the same state the guard checks.
+  const guard = `EXISTS (SELECT 1 FROM drafts WHERE id = ? AND locked_at IS ${action === 'lock' ? '' : 'NOT '}NULL)`
   await db.batch([
-    db.prepare(
-      `UPDATE drafts SET locked_at = ?, locked_by = ?, hidden_at = ?, updated_at = ? WHERE id = ?`
-    ).bind(lockedAt, lockedBy, hiddenAt, now, draftId),
     db.prepare(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
         discord_id, username, created_at)
-       VALUES (?, 'draft', '', ?, NULL, NULL, ?, ?, ?)`
-    ).bind(draftId, action, editorId, editorName, now),
+       SELECT ?, 'draft', '', ?, NULL, NULL, ?, ?, ?
+       WHERE ${guard}`
+    ).bind(draftId, action, editorId, editorName, now, draftId),
     db.prepare(
-      `DELETE FROM draft_reviews WHERE draft_id = ?`
-    ).bind(draftId)
+      `DELETE FROM draft_reviews WHERE draft_id = ? AND ${guard}`
+    ).bind(draftId, draftId),
+    db.prepare(
+      `UPDATE drafts SET locked_at = ?, locked_by = ?, hidden_at = ?, updated_at = ?
+       WHERE id = ? AND ${guard}`
+    ).bind(lockedAt, lockedBy, hiddenAt, now, draftId, draftId)
   ])
   return readDraftOrThrow(db, draftId)
 }
@@ -944,18 +1084,28 @@ async function writeHideAudit(
   now: number,
   hiddenAt: number | null
 ): Promise<DraftRecord> {
-  await db.batch([
-    db.prepare(
-      `UPDATE drafts SET hidden_at = ?, updated_at = ? WHERE id = ?`
-    ).bind(hiddenAt, now, draftId),
+  // Hiding needs a locked, visible draft and unhiding a hidden one. The condition sits in
+  // the writes, so an unlock that lands after the caller's read cannot be undone by a hide.
+  const guard = action === 'hide'
+    ? `EXISTS (SELECT 1 FROM drafts WHERE id = ? AND locked_at IS NOT NULL AND hidden_at IS NULL)`
+    : `EXISTS (SELECT 1 FROM drafts WHERE id = ? AND hidden_at IS NOT NULL)`
+  const outcomes = await db.batch([
     db.prepare(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
         discord_id, username, created_at)
-       VALUES (?, 'draft', '', ?, NULL, NULL, ?, ?, ?)`
-    ).bind(draftId, action, editorId, editorName, now)
+       SELECT ?, 'draft', '', ?, NULL, NULL, ?, ?, ?
+       WHERE ${guard}`
+    ).bind(draftId, action, editorId, editorName, now, draftId),
+    db.prepare(
+      `UPDATE drafts SET hidden_at = ?, updated_at = ? WHERE id = ? AND ${guard}`
+    ).bind(hiddenAt, now, draftId, draftId)
   ])
-  return readDraftOrThrow(db, draftId)
+  const draft = await readDraftOrThrow(db, draftId)
+  if (action === 'hide' && changesOf(outcomes[1]) === 0 && !draft.lockedAt) {
+    throw new DraftError('LOCKED', 'Lock this draft before hiding it.', 409)
+  }
+  return draft
 }
 
 
@@ -1062,42 +1212,25 @@ function resolveRestoreTarget(
   requested: number
 ): { throughId: number; saveId: number; createdAt: number } {
   const ofSave = audits.filter((row) => row.saveId === requested && isSaveAuditAction(row.action))
-  if (ofSave.length) {
-    return {
-      throughId: lastEventIdForSave(ofSave, requested) ?? ofSave[ofSave.length - 1].id,
-      saveId: requested,
-      createdAt: ofSave[0].createdAt
-    }
-  }
-  const target = audits.find((row) => row.id === requested)
-  if (!target) {
+  if (!ofSave.length) {
     throw new DraftError('NOT_FOUND', 'That save is not on this draft.', 404)
   }
-  if (target.action === 'import') {
-    throw new DraftError('INVALID_INPUT', 'Imports cannot be restored.', 400)
-  }
-  if (!isSaveAuditAction(target.action)) {
-    throw new DraftError('INVALID_INPUT', 'Pick a save in Activity.', 400)
-  }
-  if (target.saveId != null && target.saveId !== target.id) {
-    throw new DraftError('INVALID_INPUT', 'Pick the start of a save in Activity.', 400)
-  }
   return {
-    throughId: target.id,
-    saveId: target.saveId ?? target.id,
-    createdAt: target.createdAt
+    throughId: ofSave[ofSave.length - 1].id,
+    saveId: requested,
+    createdAt: ofSave[0].createdAt
   }
 }
 
 export async function restoreDraft(
   db: D1Database,
   draftId: number,
-  eventId: number,
+  saveId: number,
   editorId: string,
   editorName: string,
   now = Date.now()
 ): Promise<DraftRecord> {
-  if (!Number.isSafeInteger(eventId) || eventId < 1) {
+  if (!Number.isSafeInteger(saveId) || saveId < 1) {
     throw new DraftError('INVALID_INPUT', 'Save id must be a positive integer.', 400)
   }
   const current = await getDraft(db, draftId)
@@ -1108,66 +1241,44 @@ export async function restoreDraft(
     throw new DraftError('LOCKED', 'This draft is locked.', 423)
   }
   const audits = await listAllDraftAudit(db, draftId)
-  const target = resolveRestoreTarget(audits, eventId)
+  const target = resolveRestoreTarget(audits, saveId)
   const replayed = replayDraftAudit(audits, target.throughId, restoreIdentityFromCatalog(current))
   if (catalogsMatch(current, replayed)) {
     return current
   }
-  const statements = [
-    db.prepare(`DELETE FROM draft_entities WHERE draft_id = ?`).bind(draftId)
-  ]
-  for (const series of replayed.series) {
-    const revision = (current.series.find((item) => item.key === series.key)?.revision ?? 0) + 1
-    statements.push(
-      db.prepare(
-        `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
-          base_aliases, revision, last_editor_id, last_editor_name)
-         VALUES (?, 'series', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        draftId,
-        series.key,
-        series.name,
-        JSON.stringify(series.aliases),
-        series.importAction,
-        JSON.stringify(series.baseAliases),
-        revision,
-        editorId,
-        editorName
-      )
-    )
+  // Every change to a draft writes an audit row, so the newest audit id read above stands
+  // for the whole state this restore was built from. Each statement writes only while the
+  // draft is unlocked and that id is still the newest. A save or lock that lands in between
+  // makes the whole restore write nothing, and the editor is asked to try again. The
+  // restore's own audit row, which moves that id, is written last.
+  const lastAuditId = audits.length ? audits[audits.length - 1].id : 0
+  const guard: SqlGuard = {
+    sql: `${DRAFT_UNLOCKED}
+      AND (SELECT COALESCE(MAX(id), 0) FROM draft_audit WHERE draft_id = ?) = ?`,
+    binds: [draftId, draftId, lastAuditId]
   }
-  for (const character of replayed.characters) {
-    const revision = (current.characters.find((item) => item.key === character.key)?.revision ?? 0) + 1
-    statements.push(
-      db.prepare(
-        `INSERT INTO draft_entities
-         (draft_id, entity_type, entity_key, name, series_key, aliases, import_action,
-          base_aliases, revision, last_editor_id, last_editor_name)
-         VALUES (?, 'character', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        draftId,
-        character.key,
-        character.name,
-        character.seriesKey,
-        JSON.stringify(character.aliases),
-        character.importAction,
-        JSON.stringify(character.baseAliases),
-        revision,
-        editorId,
-        editorName
-      )
-    )
-  }
-  statements.push(
+  const revisionOf = (type: DraftEntityType, key: string) => (
+    (type === 'series' ? current.series : current.characters)
+      .find((item) => item.key === key)?.revision ?? 0
+  ) + 1
+  const rows = [...replayed.series, ...replayed.characters].map((entity) => ({
+    entity,
+    revision: revisionOf(entity.type, entity.key)
+  }))
+  const outcomes = await db.batch([
     db.prepare(
-      `UPDATE drafts SET description = ?, updated_at = ? WHERE id = ?`
-    ).bind(replayed.description, now, draftId),
+      `UPDATE drafts SET description = ?, updated_at = ? WHERE id = ? AND ${guard.sql}`
+    ).bind(replayed.description, now, draftId, ...guard.binds),
+    db.prepare(
+      `DELETE FROM draft_entities WHERE draft_id = ? AND ${guard.sql}`
+    ).bind(draftId, ...guard.binds),
+    ...insertEntityStatements(db, draftId, rows, editorId, editorName, guard),
     db.prepare(
       `INSERT INTO draft_audit
        (draft_id, entity_type, entity_key, action, before_json, after_json,
         discord_id, username, created_at)
-       VALUES (?, 'draft', '', 'restore', ?, ?, ?, ?, ?)`
+       SELECT ?, 'draft', '', 'restore', ?, ?, ?, ?, ?
+       WHERE ${guard.sql}`
     ).bind(
       draftId,
       JSON.stringify({ eventId: target.saveId, createdAt: target.createdAt }),
@@ -1180,9 +1291,21 @@ export async function restoreDraft(
       }),
       editorId,
       editorName,
-      now
+      now,
+      ...guard.binds
     )
-  )
-  await db.batch(statements)
+  ])
+  if (changesOf(outcomes[0]) === 0) {
+    const latest = await getDraftRow(db, draftId)
+    if (!latest) {
+      throw new DraftError('NOT_FOUND', 'That draft does not exist.', 404)
+    }
+    assertUnlocked(latest)
+    throw new DraftError(
+      'CONFLICT',
+      'Someone changed this draft while it was being restored. Try again.',
+      409
+    )
+  }
   return readDraftOrThrow(db, draftId)
 }

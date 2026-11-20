@@ -1,12 +1,14 @@
 import {
   characterIdentity,
   cleanDraftAliases,
+  cleanDraftKey,
   cleanDraftName,
   draftKey,
   resolveDraftSeriesKey,
   uniqueDraftKey,
   type DraftSeriesRef
 } from './draft-catalog'
+import { sameAliases } from './draft-restore'
 import {
   DraftError,
   type DraftCharacter,
@@ -47,13 +49,6 @@ function requireName(value: string | undefined): string {
 
 function aliasesOf(value: string[] | undefined, fallback: string[]): string[] {
   return value === undefined ? fallback : cleanDraftAliases(value)
-}
-
-function sameAliases(left: readonly string[], right: readonly string[]): boolean {
-  if (left.length !== right.length) {
-    return false
-  }
-  return left.every((alias, index) => alias === right[index])
 }
 
 function aliasIdentity(value: string): string {
@@ -221,12 +216,7 @@ function addEntity(
     )
   }
   const name = requireName(mutation.name)
-  const key = mutation.key && mutation.key.trim()
-    ? mutation.key.trim()
-    : uniqueDraftKey(name, usedKeys)
-  if (usedKeys.has(key)) {
-    throw new DraftError('INVALID_INPUT', 'That key is already in this draft.', 400)
-  }
+  const key = cleanDraftKey(mutation.key?.trim(), name, usedKeys)
   const aliases = aliasesOf(mutation.aliases, [])
   if (mutation.type === 'series') {
     const entity: DraftSeries = {

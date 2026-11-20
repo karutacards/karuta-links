@@ -1974,17 +1974,38 @@ window.krtaDraftEditor = function () {
 window.krtaDraftImport = function () {
   var status = document.getElementById('import-status');
   var storageKey = 'krta-draft-import';
+  var busy = false;
+  var created = false;
+  function storeCatalog(catalog) {
+    try { sessionStorage.setItem(storageKey, JSON.stringify(catalog)); } catch (error) { /* storage is optional */ }
+  }
+  function forgetCatalog() {
+    try { sessionStorage.removeItem(storageKey); } catch (error) { /* storage is optional */ }
+  }
+  // The catalog is kept only so that signing in again can finish the import. Any answer
+  // other than a missing sign-in forgets it, so a reload never posts the same catalog twice.
   async function submit(catalog) {
-    sessionStorage.setItem(storageKey, JSON.stringify(catalog));
-    var result = await api('/api/v1/drafts', {
-      method: 'POST',
-      body: JSON.stringify(catalog)
-    });
+    if (busy || created) return;
+    busy = true;
+    storeCatalog(catalog);
+    var result;
+    try {
+      result = await api('/api/v1/drafts', {
+        method: 'POST',
+        body: JSON.stringify(catalog)
+      });
+    } catch (error) {
+      busy = false;
+      showStatus(status, 'The draft could not be created.', true);
+      return;
+    }
+    busy = false;
+    if (result.response.status !== 401) forgetCatalog();
     if (!result.response.ok) {
       showStatus(status, result.body && result.body.error ? result.body.error : 'The draft could not be created.', true);
       return;
     }
-    sessionStorage.removeItem(storageKey);
+    created = true;
     window.location.href = '/drafts/' + result.body.id;
   }
   window.addEventListener('message', function (event) {
@@ -1995,11 +2016,21 @@ window.krtaDraftImport = function () {
   if (window.opener) {
     window.opener.postMessage('krta-draft-ready', 'https://karuta.gswaccess.com');
   }
+  var pending = null;
   try {
-    var pending = sessionStorage.getItem(storageKey);
-    if (pending) submit(JSON.parse(pending));
+    pending = sessionStorage.getItem(storageKey);
   } catch (error) {
-    showStatus(status, 'The stored catalog is invalid.', true);
+    pending = null;
+  }
+  if (pending) {
+    var stored = null;
+    try {
+      stored = JSON.parse(pending);
+    } catch (error) {
+      forgetCatalog();
+      showStatus(status, 'The stored catalog is invalid.', true);
+    }
+    if (stored) submit(stored);
   }
 };
 `
