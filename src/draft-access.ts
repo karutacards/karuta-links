@@ -53,8 +53,12 @@ export function playerStatsFromFirestore(data: Record<string, unknown>): PlayerS
   }
 }
 
-export function meetsCredentials(stats: PlayerStats, config: DraftsConfig): boolean {
-  const { minDrops, minGrabs, minPurchases } = config.credentials
+// A player passes when any one activity bar is met.
+export function meetsCredentials(
+  stats: PlayerStats,
+  credentials: DraftsConfig['credentials']
+): boolean {
+  const { minDrops, minGrabs, minPurchases } = credentials
   return stats.drops >= minDrops || stats.grabs >= minGrabs || stats.purchases >= minPurchases
 }
 
@@ -210,7 +214,7 @@ export async function evaluateDraftAccess(
           message: ACCESS_UNAVAILABLE_MESSAGE
         }
       }
-      if (!stats || !meetsCredentials(stats, config)) {
+      if (!stats || !meetsCredentials(stats, config.credentials)) {
         return {
           ok: false,
           status: 403,

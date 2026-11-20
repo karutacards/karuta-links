@@ -1,5 +1,6 @@
 import {
   envAccessLoaders,
+  meetsCredentials,
   type AccessDecision,
   type AccessDenied,
   type DraftAccessLoaders,
@@ -23,14 +24,6 @@ export type ReportAccessLoaders = DraftAccessLoaders & {
 
 function denied(message: string, status: 403 | 503, code: AccessDenied['code']): AccessDenied {
   return { ok: false, status, code, message }
-}
-
-export function meetsReportCredentials(stats: PlayerStats): boolean {
-  return (
-    stats.drops >= REPORT_CREDENTIALS.minDrops ||
-    stats.grabs >= REPORT_CREDENTIALS.minGrabs ||
-    stats.purchases >= REPORT_CREDENTIALS.minPurchases
-  )
 }
 
 export async function evaluateReportAccess(
@@ -59,7 +52,7 @@ export async function evaluateReportAccess(
   } catch {
     return denied(REPORT_ACCESS_UNAVAILABLE_MESSAGE, 503, 'UNAVAILABLE')
   }
-  if (!stats || !meetsReportCredentials(stats)) {
+  if (!stats || !meetsCredentials(stats, REPORT_CREDENTIALS)) {
     return denied(REPORT_ACCESS_DENIED_MESSAGE, 403, 'FORBIDDEN')
   }
   return { ok: true }

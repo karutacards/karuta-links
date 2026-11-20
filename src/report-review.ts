@@ -41,22 +41,21 @@ function parseLimit(raw: string | undefined): number | null {
   return limit
 }
 
+// The limiter runs before the bearer check, so wrong guesses count against the
+// same shared limit as real reads.
 async function authorizeReview(request: Request, env: Env): Promise<Response | null> {
   const expected = env.REPORT_REVIEW_TOKEN
-  if (!expected) {
-    return json({ error: 'Unavailable' }, 503)
-  }
-  const provided = bearerToken(request.headers.get('Authorization') ?? undefined)
-  if (!provided || !tokensMatch(provided, expected)) {
-    return json({ error: 'Unauthorized' }, 401)
-  }
   const limiter = env.REPORT_REVIEW
-  if (!limiter) {
+  if (!expected || !limiter) {
     return json({ error: 'Unavailable' }, 503)
   }
   const { success } = await limiter.limit({ key: 'review' })
   if (!success) {
     return json({ error: 'Rate limited' }, 429)
+  }
+  const provided = bearerToken(request.headers.get('Authorization') ?? undefined)
+  if (!provided || !tokensMatch(provided, expected)) {
+    return json({ error: 'Unauthorized' }, 401)
   }
   return null
 }

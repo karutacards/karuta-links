@@ -36,14 +36,34 @@ function isAccessMode(value: string): value is DraftAccessMode {
   return value === 'open' || value === 'credentials' || value === 'whitelist'
 }
 
-function snowflakeList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((id): id is string => typeof id === 'string' && id.length > 0)
+const SNOWFLAKE = /^[0-9]{17,20}$/
+
+// The global file and a draft's override follow the same rules, so an admin cannot save
+// an override the global file would refuse.
+function snowflakeList(value: unknown, label: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array of Discord IDs.`)
+  }
+  for (const id of value) {
+    if (typeof id !== 'string' || !SNOWFLAKE.test(id)) {
+      throw new Error(`${label} must hold only Discord IDs of 17 to 20 digits.`)
+    }
+  }
+  return [...new Set(value as string[])]
 }
 
-function optionalNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+function credentialBar(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${label} must be a whole number of at least 1.`)
+  }
+  return value
 }
+
+const CREDENTIAL_BARS = [
+  ['minDrops', 'The drop bar'],
+  ['minGrabs', 'The grab bar'],
+  ['minPurchases', 'The purchase bar']
+] as const
 
 export function parseDraftsConfig(raw: unknown): DraftsConfig {
   if (!raw || typeof raw !== 'object') {
@@ -56,16 +76,18 @@ export function parseDraftsConfig(raw: unknown): DraftsConfig {
   const credentialsRaw = record.credentials && typeof record.credentials === 'object'
     ? record.credentials as Record<string, unknown>
     : {}
-  const minDrops = typeof credentialsRaw.minDrops === 'number' ? credentialsRaw.minDrops : 1000
-  const minGrabs = typeof credentialsRaw.minGrabs === 'number' ? credentialsRaw.minGrabs : 1000
-  const minPurchases = typeof credentialsRaw.minPurchases === 'number'
-    ? credentialsRaw.minPurchases
-    : 1
+  const defaults: DraftCredentials = { minDrops: 1000, minGrabs: 1000, minPurchases: 1 }
+  const credentials = { ...defaults }
+  for (const [field, label] of CREDENTIAL_BARS) {
+    if (credentialsRaw[field] !== undefined) {
+      credentials[field] = credentialBar(credentialsRaw[field], label)
+    }
+  }
   return {
     access: record.access,
-    whitelist: snowflakeList(record.whitelist),
-    adminIds: snowflakeList(record.adminIds),
-    credentials: { minDrops, minGrabs, minPurchases }
+    whitelist: record.whitelist === undefined ? [] : snowflakeList(record.whitelist, 'Whitelist'),
+    adminIds: record.adminIds === undefined ? [] : snowflakeList(record.adminIds, 'Admin IDs'),
+    credentials
   }
 }
 
@@ -83,10 +105,7 @@ export function parseDraftAccessOverride(raw: unknown): DraftAccessOverride | nu
     override.access = record.access
   }
   if (record.whitelist !== undefined) {
-    if (!Array.isArray(record.whitelist)) {
-      throw new Error('Whitelist must be an array of Discord IDs.')
-    }
-    override.whitelist = snowflakeList(record.whitelist)
+    override.whitelist = snowflakeList(record.whitelist, 'Whitelist')
   }
   if (record.credentials !== undefined) {
     if (!record.credentials || typeof record.credentials !== 'object' || Array.isArray(record.credentials)) {
@@ -94,12 +113,11 @@ export function parseDraftAccessOverride(raw: unknown): DraftAccessOverride | nu
     }
     const credentialsRaw = record.credentials as Record<string, unknown>
     const credentials: Partial<DraftCredentials> = {}
-    const minDrops = optionalNumber(credentialsRaw.minDrops)
-    const minGrabs = optionalNumber(credentialsRaw.minGrabs)
-    const minPurchases = optionalNumber(credentialsRaw.minPurchases)
-    if (minDrops !== undefined) credentials.minDrops = minDrops
-    if (minGrabs !== undefined) credentials.minGrabs = minGrabs
-    if (minPurchases !== undefined) credentials.minPurchases = minPurchases
+    for (const [field, label] of CREDENTIAL_BARS) {
+      if (credentialsRaw[field] !== undefined && credentialsRaw[field] !== null) {
+        credentials[field] = credentialBar(credentialsRaw[field], label)
+      }
+    }
     if (Object.keys(credentials).length) override.credentials = credentials
   }
   return isEmptyOverride(override) ? null : override

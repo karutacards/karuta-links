@@ -47,6 +47,7 @@ import {
 import { formatApDate } from './html'
 import { oauthConfigured } from './oauth'
 import { getSession, type Session } from './session'
+import { readLimitedText } from './request-body'
 
 const MAX_DRAFT_BYTES = 1_000_000
 
@@ -181,86 +182,41 @@ function parseOptionalSaveId(body: unknown): number | null {
   return value
 }
 
-async function requireDraftSession(
+// Signs the visitor in and runs an access check. With a next path the answers are pages
+// and a missing session redirects to Discord. Without one they are JSON.
+async function requireDraftSignIn(
   request: Request,
   env: Env,
-  nextPath: string,
-  gate: DraftGate
+  check: (discordId: string) => Promise<AccessDecision>,
+  nextPath: string | null
 ): Promise<{ session: Session } | Response> {
+  const asHtml = nextPath !== null
   if (!oauthConfigured(env)) {
-    return html(renderDraftUnavailable(), 503)
+    return asHtml
+      ? html(renderDraftUnavailable(), 503)
+      : json({ error: ACCESS_UNAVAILABLE_MESSAGE, code: 'UNAVAILABLE' }, 503)
   }
   const session = await getSession(request, env.SESSION_SECRET)
   if (!session) {
+    if (!asHtml) {
+      return json({ error: 'Sign in with Discord to continue.', code: 'UNAUTHENTICATED' }, 401)
+    }
     const url = new URL('/api/auth/discord', request.url)
     url.searchParams.set('next', nextPath)
     return Response.redirect(url.toString(), 302)
   }
-  const decision = await gate(env, session.discordId, draftsConfig)
+  const decision = await check(session.discordId)
   if (!decision.ok) {
-    return accessHtml(decision)
+    return asHtml ? accessHtml(decision) : accessJson(decision)
   }
   return { session }
 }
 
-async function requireDraftApiSession(
-  request: Request,
-  env: Env,
-  gate: DraftGate
-): Promise<{ session: Session } | Response> {
-  if (!oauthConfigured(env)) {
-    return json({ error: ACCESS_UNAVAILABLE_MESSAGE, code: 'UNAVAILABLE' }, 503)
-  }
-  const session = await getSession(request, env.SESSION_SECRET)
-  if (!session) {
-    return json({ error: 'Sign in with Discord to continue.', code: 'UNAUTHENTICATED' }, 401)
-  }
-  const decision = await gate(env, session.discordId, draftsConfig)
-  if (!decision.ok) {
-    return accessJson(decision)
-  }
-  return { session }
-}
-
-
-
-async function requireDraftIdentity(
-  request: Request,
-  env: Env,
-  nextPath: string
-): Promise<{ session: Session } | Response> {
-  if (!oauthConfigured(env)) {
-    return html(renderDraftUnavailable(), 503)
-  }
-  const session = await getSession(request, env.SESSION_SECRET)
-  if (!session) {
-    const url = new URL('/api/auth/discord', request.url)
-    url.searchParams.set('next', nextPath)
-    return Response.redirect(url.toString(), 302)
-  }
-  const decision = await draftIdentityForEnv(env, session.discordId)
-  if (!decision.ok) {
-    return accessHtml(decision)
-  }
-  return { session }
-}
-
-async function requireDraftApiIdentity(
+function requireDraftApiIdentity(
   request: Request,
   env: Env
 ): Promise<{ session: Session } | Response> {
-  if (!oauthConfigured(env)) {
-    return json({ error: ACCESS_UNAVAILABLE_MESSAGE, code: 'UNAVAILABLE' }, 503)
-  }
-  const session = await getSession(request, env.SESSION_SECRET)
-  if (!session) {
-    return json({ error: 'Sign in with Discord to continue.', code: 'UNAUTHENTICATED' }, 401)
-  }
-  const decision = await draftIdentityForEnv(env, session.discordId)
-  if (!decision.ok) {
-    return accessJson(decision)
-  }
-  return { session }
+  return requireDraftSignIn(request, env, (discordId) => draftIdentityForEnv(env, discordId), null)
 }
 
 async function authorizeDraft(
@@ -315,14 +271,82 @@ async function requireVisibleDraft(
   return draft
 }
 
+async function readJsonBody(request: Request): Promise<{ body: unknown } | Response> {
+  try {
+    return { body: await request.json() }
+  } catch {
+    return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
+  }
+}
+
+function draftResult(run: () => Promise<Response>): Promise<Response> {
+  return run().catch((error: unknown) => {
+    if (error instanceof DraftError) {
+      return draftErrorResponse(error)
+    }
+    throw error
+  })
+}
+
+type DraftRouteOptions = {
+  // Counts toward the editor's write rate limit.
+  write?: boolean
+  // Only `adminIds` may call it.
+  admin?: boolean
+  // Runs after the sign-in, rate and admin checks and before the draft is read.
+  precheck?: () => Response | null
+}
+
 export function registerDrafts(
   app: Hono<{ Bindings: Env }>,
   options: { gate?: DraftGate } = {}
 ): void {
   const gate = options.gate ?? draftAccessForEnv
 
+  // The front of every API route that names a draft: sign-in and identity, the write
+  // rate limit, the admin check, then the draft's visibility and its access rules.
+  async function openDraft(
+    request: Request,
+    env: Env,
+    rawId: string,
+    route: DraftRouteOptions = {}
+  ): Promise<{ session: Session; draft: DraftRecord } | Response> {
+    const auth = await requireDraftApiIdentity(request, env)
+    if (auth instanceof Response) {
+      return auth
+    }
+    const discordId = auth.session.discordId
+    if (route.write) {
+      const limited = await rejectDraftWriteIfLimited(env, discordId)
+      if (limited) {
+        return limited
+      }
+    }
+    if (route.admin && !canAdminDrafts(discordId)) {
+      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
+    }
+    const early = route.precheck?.()
+    if (early) {
+      return early
+    }
+    const draft = await requireVisibleDraft(env.DB, parsePositiveDraftId(rawId), discordId)
+    if (draft instanceof Response) {
+      return draft
+    }
+    const allowed = await authorizeDraft(env, discordId, draft, false, gate)
+    if (allowed instanceof Response) {
+      return allowed
+    }
+    return { session: auth.session, draft }
+  }
+
   app.get('/drafts/import', async (c) => {
-    const auth = await requireDraftSession(c.req.raw, c.env, '/drafts/import', gate)
+    const auth = await requireDraftSignIn(
+      c.req.raw,
+      c.env,
+      (discordId) => gate(c.env, discordId, draftsConfig),
+      '/drafts/import'
+    )
     if (auth instanceof Response) {
       return auth
     }
@@ -334,7 +358,12 @@ export function registerDrafts(
     if (id === null) {
       return html(renderDraftNotFound(), 404)
     }
-    const auth = await requireDraftIdentity(c.req.raw, c.env, `/drafts/${id}`)
+    const auth = await requireDraftSignIn(
+      c.req.raw,
+      c.env,
+      (discordId) => draftIdentityForEnv(c.env, discordId),
+      `/drafts/${id}`
+    )
     if (auth instanceof Response) {
       return auth
     }
@@ -363,7 +392,12 @@ export function registerDrafts(
   })
 
   app.post('/api/v1/drafts', async (c) => {
-    const auth = await requireDraftApiSession(c.req.raw, c.env, gate)
+    const auth = await requireDraftSignIn(
+      c.req.raw,
+      c.env,
+      (discordId) => gate(c.env, discordId, draftsConfig),
+      null
+    )
     if (auth instanceof Response) {
       return auth
     }
@@ -371,110 +405,64 @@ export function registerDrafts(
     if (limited) {
       return limited
     }
-    const lengthHeader = c.req.header('content-length')
-    if (lengthHeader && Number(lengthHeader) > MAX_DRAFT_BYTES) {
+    const text = await readLimitedText(c.req.raw, MAX_DRAFT_BYTES)
+    if (text === null) {
       return json({ error: 'Payload too large.', code: 'TOO_LARGE' }, 413)
     }
     let body: unknown
     try {
-      body = await c.req.json()
+      body = JSON.parse(text)
     } catch {
       return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
     }
-    try {
+    return draftResult(async () => {
       const created = await createDraft(c.env.DB, body, auth.session.discordId, auth.session.username)
       return json({ id: created.id, path: `/drafts/${created.id}` }, 201)
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.get('/api/v1/drafts/:id', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    if (id === null) {
-      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
-    }
-    const draft = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (draft instanceof Response) {
-      return draft
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, draft, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'))
+    if (opened instanceof Response) {
+      return opened
     }
     return json({
-      ...draft,
-      canAdmin: canAdminDrafts(auth.session.discordId)
+      ...opened.draft,
+      canAdmin: canAdminDrafts(opened.session.discordId)
     })
   })
 
   app.patch('/api/v1/drafts/:id', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
+    const read = await readJsonBody(c.req.raw)
+    if (read instanceof Response) {
+      return read
     }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const draft = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (draft instanceof Response) {
-      return draft
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, draft, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
-    }
-    if (!body || typeof body !== 'object' || typeof (body as { description?: unknown }).description !== 'string') {
+    const description = read.body && typeof read.body === 'object'
+      ? (read.body as { description?: unknown }).description
+      : undefined
+    if (typeof description !== 'string') {
       return json({ error: 'Description must be a string.', code: 'INVALID_INPUT' }, 400)
     }
-    try {
+    return draftResult(async () => {
       const result = await setDraftDescription(
         c.env.DB,
-        draft.id,
-        (body as { description: string }).description,
-        auth.session.discordId,
-        auth.session.username
+        opened.draft.id,
+        description,
+        opened.session.discordId,
+        opened.session.username
       )
       return json({ description: result.draft.description })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.get('/api/v1/drafts/:id/events', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'))
+    if (opened instanceof Response) {
+      return opened
     }
     const afterRaw = c.req.query('after')
     let after = 0
@@ -484,15 +472,15 @@ export function registerDrafts(
       }
       after = Number(afterRaw)
     }
-    try {
+    return draftResult(async () => {
       const snapshot = await pollDraftEvents(
         c.env.DB,
-        visible.id,
+        opened.draft.id,
         after,
-        auth.session.discordId,
-        auth.session.username,
+        opened.session.discordId,
+        opened.session.username,
         Date.now(),
-        auth.session.avatar
+        opened.session.avatar
       )
       return json({
         after: snapshot.after,
@@ -518,84 +506,52 @@ export function registerDrafts(
         hiddenAt: snapshot.hiddenAt,
         description: snapshot.description
       }, 200, { 'cache-control': 'no-store' })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.patch('/api/v1/drafts/:id/entities', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
+    const read = await readJsonBody(c.req.raw)
+    if (read instanceof Response) {
+      return read
     }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
-    }
-    try {
-      const mutation = parseMutation(body)
+    return draftResult(async () => {
+      const mutation = parseMutation(read.body)
       const result = await mutateDraftEntity(
         c.env.DB,
-        visible.id,
+        opened.draft.id,
         mutation,
-        auth.session.discordId,
-        auth.session.username,
+        opened.session.discordId,
+        opened.session.username,
         Date.now(),
-        parseOptionalSaveId(body)
+        parseOptionalSaveId(read.body)
       )
       return json({
         entity: result.entity,
         saveId: result.saveId,
         adoptedSeries: result.adoptedSeries
       })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.get('/api/v1/drafts/:id/entities/:type/:key/audit', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
     const type = parseEntityType(c.req.param('type'))
     const key = c.req.param('key')
-    if (id === null || !type || !key) {
-      return json({ error: 'That entity does not exist.', code: 'NOT_FOUND' }, 404)
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), {
+      precheck: () => (
+        parsePositiveDraftId(c.req.param('id')) === null || !type || !key
+          ? json({ error: 'That entity does not exist.', code: 'NOT_FOUND' }, 404)
+          : null
+      )
+    })
+    if (opened instanceof Response) {
+      return opened
     }
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    const entries = await listEntityAudit(c.env.DB, id, type, key)
-    const draft = visible
-    const series = draft?.series ?? []
+    const entries = await listEntityAudit(c.env.DB, opened.draft.id, type as DraftEntityType, key)
+    const series = opened.draft.series
     return json({
       entries: entries.map((entry) => ({
         id: entry.id,
@@ -612,143 +568,68 @@ export function registerDrafts(
   })
 
   app.post('/api/v1/drafts/:id/review', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
+    const read = await readJsonBody(c.req.raw)
+    if (read instanceof Response) {
+      return read
     }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
-    }
-    try {
+    return draftResult(async () => {
       const reviews = await setDraftReview(
         c.env.DB,
-        visible.id,
-        auth.session.discordId,
-        auth.session.username,
-        parseReviewDecision(body)
+        opened.draft.id,
+        opened.session.discordId,
+        opened.session.username,
+        parseReviewDecision(read.body)
       )
       return json({ reviews })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.post('/api/v1/drafts/:id/lock', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
-    }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    try {
+    return draftResult(async () => {
       const draft = await lockDraft(
         c.env.DB,
-        visible.id,
-        auth.session.discordId,
-        auth.session.username
+        opened.draft.id,
+        opened.session.discordId,
+        opened.session.username
       )
       return json({ locked: true, lockedAt: draft.lockedAt })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.post('/api/v1/drafts/:id/unlock', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
-    }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    try {
+    return draftResult(async () => {
       const draft = await unlockDraft(
         c.env.DB,
-        visible.id,
-        auth.session.discordId,
-        auth.session.username
+        opened.draft.id,
+        opened.session.discordId,
+        opened.session.username
       )
       return json({ locked: false, lockedAt: draft.lockedAt })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.patch('/api/v1/drafts/:id/config', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
+    const read = await readJsonBody(c.req.raw)
+    if (read instanceof Response) {
+      return read
     }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
-    }
+    const body = read.body
     const record = body && typeof body === 'object' ? body as { override?: unknown } : null
     let override
     try {
@@ -760,140 +641,76 @@ export function registerDrafts(
       const ended = /[.!?]$/.test(message) ? message : `${message}.`
       return json({ error: ended, code: 'INVALID_INPUT' }, 400)
     }
-    try {
+    return draftResult(async () => {
       const draft = await setDraftAccessConfig(
         c.env.DB,
-        visible.id,
+        opened.draft.id,
         override,
-        auth.session.discordId,
-        auth.session.username
+        opened.session.discordId,
+        opened.session.username
       )
       const config = mergeDraftsConfig(draftsConfig, draft.accessOverride)
       return json({
         override: draft.accessOverride,
         effective: publicDraftAccess(config)
       })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.post('/api/v1/drafts/:id/hide', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
-    }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    try {
+    return draftResult(async () => {
       const draft = await hideDraft(
         c.env.DB,
-        visible.id,
-        auth.session.discordId,
-        auth.session.username
+        opened.draft.id,
+        opened.session.discordId,
+        opened.session.username
       )
       return json({ hidden: true, hiddenAt: draft.hiddenAt })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.post('/api/v1/drafts/:id/unhide', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
-    }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    try {
+    return draftResult(async () => {
       const draft = await unhideDraft(
         c.env.DB,
-        visible.id,
-        auth.session.discordId,
-        auth.session.username
+        opened.draft.id,
+        opened.session.discordId,
+        opened.session.username
       )
       return json({ hidden: false, hiddenAt: draft.hiddenAt })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.post('/api/v1/drafts/:id/restore', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { write: true, admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    const limited = await rejectDraftWriteIfLimited(c.env, auth.session.discordId)
-    if (limited) {
-      return limited
+    const read = await readJsonBody(c.req.raw)
+    if (read instanceof Response) {
+      return read
     }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    const visible = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (visible instanceof Response) {
-      return visible
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, visible, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return json({ error: 'Body must be JSON.', code: 'INVALID_INPUT' }, 400)
-    }
-    const record = body && typeof body === 'object' ? body as { saveId?: unknown; eventId?: unknown } : null
-    const eventId = Number(record?.saveId ?? record?.eventId)
-    if (!Number.isSafeInteger(eventId) || eventId < 1) {
+    const saveId = read.body && typeof read.body === 'object'
+      ? Number((read.body as { saveId?: unknown }).saveId)
+      : Number.NaN
+    if (!Number.isSafeInteger(saveId) || saveId < 1) {
       return json({ error: 'Save id must be a positive integer.', code: 'INVALID_INPUT' }, 400)
     }
-    try {
+    return draftResult(async () => {
       const draft = await restoreDraft(
         c.env.DB,
-        visible.id,
-        eventId,
-        auth.session.discordId,
-        auth.session.username
+        opened.draft.id,
+        saveId,
+        opened.session.discordId,
+        opened.session.username
       )
       return json({
         restored: true,
@@ -901,34 +718,15 @@ export function registerDrafts(
         series: draft.series,
         characters: draft.characters
       })
-    } catch (error) {
-      if (error instanceof DraftError) {
-        return draftErrorResponse(error)
-      }
-      throw error
-    }
+    })
   })
 
   app.get('/api/v1/drafts/:id/export.txt', async (c) => {
-    const auth = await requireDraftApiIdentity(c.req.raw, c.env)
-    if (auth instanceof Response) {
-      return auth
+    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { admin: true })
+    if (opened instanceof Response) {
+      return opened
     }
-    if (!canAdminDrafts(auth.session.discordId)) {
-      return json({ error: ACCESS_DENIED_MESSAGE, code: 'FORBIDDEN' }, 403)
-    }
-    const id = parsePositiveDraftId(c.req.param('id'))
-    if (id === null) {
-      return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
-    }
-    const draft = await requireVisibleDraft(c.env.DB, id, auth.session.discordId)
-    if (draft instanceof Response) {
-      return draft
-    }
-    const allowed = await authorizeDraft(c.env, auth.session.discordId, draft, false, gate)
-    if (allowed instanceof Response) {
-      return allowed
-    }
+    const draft = opened.draft
     if (!draft.lockedAt) {
       return json({ error: 'Lock this draft before exporting it.', code: 'LOCKED' }, 409)
     }
@@ -936,7 +734,7 @@ export function registerDrafts(
       status: 200,
       headers: {
         'content-type': 'text/plain; charset=utf-8',
-        'content-disposition': `attachment; filename="draft-${id}.txt"`,
+        'content-disposition': `attachment; filename="draft-${draft.id}.txt"`,
         'x-content-type-options': 'nosniff',
         'referrer-policy': 'no-referrer',
         'x-frame-options': 'DENY'

@@ -139,7 +139,9 @@ function cleanAction(raw: unknown): DraftImportAction {
   throw new DraftError('INVALID_INPUT', 'Action must be add or update.', 400)
 }
 
-function cleanKey(raw: unknown, name: string, used: Set<string>): string {
+// One key rule for imports and for rows added in the editor: a given key is slugged the
+// same way a name is, and a missing key is made from the name.
+export function cleanDraftKey(raw: unknown, name: string, used: Set<string>): string {
   if (raw === undefined || raw === null || raw === '') {
     return uniqueDraftKey(name, used)
   }
@@ -180,7 +182,7 @@ export function parseDraftCatalog(raw: unknown): {
       throw new DraftError('INVALID_INPUT', 'Each series must be an object.', 400)
     }
     const name = cleanDraftName(item.name)
-    const key = cleanKey(item.key, name, usedSeries)
+    const key = cleanDraftKey(item.key, name, usedSeries)
     usedSeries.add(key)
     series.push({
       key,
@@ -206,7 +208,7 @@ export function parseDraftCatalog(raw: unknown): {
     if (usedIdentities.has(identity)) {
       throw new DraftError('INVALID_INPUT', 'That character is already on this series.', 400)
     }
-    const key = cleanKey(item.key, name, usedCharacters)
+    const key = cleanDraftKey(item.key, name, usedCharacters)
     usedCharacters.add(key)
     usedIdentities.add(identity)
     characters.push({

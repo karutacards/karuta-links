@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  countRecentReports,
   getReport,
   insertReport,
   isReportBanned,
   listReports,
-  recordFromRow
+  recordFromRow,
+  REPORT_RATE_LIMIT,
+  REPORT_RATE_WINDOW_MS
 } from './report-store'
 import type { ReportPayload } from './report-validate'
 
@@ -16,7 +17,7 @@ type Query = {
 
 function mockDb(options: {
   banned?: boolean
-  count?: number
+  changes?: number
   lastRowId?: number
   row?: Record<string, unknown> | null
   rows?: Record<string, unknown>[]
@@ -35,9 +36,6 @@ function mockDb(options: {
           if (sql.includes('report_bans')) {
             return options.banned ? { discord_id: statement.binds[0] } : null
           }
-          if (sql.includes('COUNT(*)')) {
-            return { count: options.count ?? 0 }
-          }
           if (sql.includes('FROM reports') && sql.includes('WHERE id =')) {
             return options.row ?? null
           }
@@ -49,7 +47,10 @@ function mockDb(options: {
         },
         async run() {
           queries.push({ sql, binds: statement.binds })
-          return { success: true, meta: { last_row_id: options.lastRowId ?? 4 } }
+          return {
+            success: true,
+            meta: { changes: options.changes ?? 1, last_row_id: options.lastRowId ?? 4 }
+          }
         }
       }
       return statement
@@ -94,12 +95,6 @@ describe('report store', () => {
     await expect(isReportBanned(open.db, '9')).resolves.toBe(false)
   })
 
-  it('counts recent reports for the rate limit', async () => {
-    const { db, queries } = mockDb({ count: 3 })
-    await expect(countRecentReports(db, '1', 10)).resolves.toBe(3)
-    expect(queries[0]?.binds).toEqual(['1', 10])
-  })
-
   it('inserts a report row as JSON arrays', async () => {
     const { db, queries } = mockDb({ lastRowId: 12 })
     const record = await insertReport(db, {
@@ -108,11 +103,25 @@ describe('report store', () => {
       payload,
       createdAt: 50
     })
-    expect(record.id).toBe(12)
-    expect(record.reason).toBe('botting')
+    expect(record?.id).toBe(12)
+    expect(record?.reason).toBe('botting')
     const insert = queries.find((query) => query.sql.includes('INSERT INTO reports'))
     expect(insert?.binds[4]).toBe('["135694375647838208"]')
     expect(insert?.binds[7]).toBe('["Ab12C"]')
+  })
+
+  it('checks the hourly limit in the same statement as the insert', async () => {
+    const { db, queries } = mockDb({ changes: 0 })
+    const record = await insertReport(db, {
+      reporterId: '1',
+      reporterUsername: 'tester',
+      payload,
+      createdAt: REPORT_RATE_WINDOW_MS + 50
+    })
+    expect(record).toBeNull()
+    expect(queries).toHaveLength(1)
+    expect(queries[0]?.sql).toMatch(/INSERT INTO reports[\s\S]*SELECT COUNT\(\*\) FROM reports/)
+    expect(queries[0]?.binds.slice(-3)).toEqual(['1', 50, REPORT_RATE_LIMIT])
   })
 
   it('maps a stored row and lists newest first', async () => {
@@ -149,8 +158,10 @@ describe('report store', () => {
     await expect(getReport(missing.db, 99)).resolves.toBeNull()
   })
 
-  it('rejects a corrupt stored row', () => {
+  it('rejects a corrupt stored row', async () => {
     expect(recordFromRow({ ...storedRow, reason: 'nope' })).toBeNull()
     expect(recordFromRow({ ...storedRow, user_ids: 'not-json' })).toBeNull()
+    const { db } = mockDb({ row: { ...storedRow, reason: 'nope' } })
+    await expect(getReport(db, 12)).rejects.toThrow('A stored report could not be read.')
   })
 })

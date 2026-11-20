@@ -17,6 +17,16 @@ export interface Session {
   generation: number
 }
 
+export type SessionViewer = Pick<Session, 'discordId' | 'username' | 'avatar'>
+
+export function viewerOf(session: Session): SessionViewer {
+  return {
+    discordId: session.discordId,
+    username: session.username,
+    avatar: session.avatar
+  }
+}
+
 export function presentSecret(value: string | undefined): value is string {
   return Boolean(value && value.length > 0)
 }
@@ -85,9 +95,16 @@ export async function signSession(session: Session, secret: string): Promise<str
   return `${payload}.${bytesToHex(signature)}`
 }
 
+// The cookie's Max-Age only asks the browser to drop it. A copied cookie must
+// also stop working on the server once it is older than that age.
+export function sessionExpired(issuedAt: number, now = Date.now()): boolean {
+  return now - issuedAt > SESSION_MAX_AGE * 1000
+}
+
 export async function verifySession(
   cookieValue: string,
-  secret: string
+  secret: string,
+  now = Date.now()
 ): Promise<Session | null> {
   const lastDot = cookieValue.lastIndexOf('.')
   if (lastDot === -1) {
@@ -117,8 +134,10 @@ export async function verifySession(
       typeof parsed.discordId !== 'string' ||
       typeof parsed.username !== 'string' ||
       typeof parsed.issuedAt !== 'number' ||
+      !Number.isFinite(parsed.issuedAt) ||
       typeof parsed.sessionId !== 'string' ||
-      parsed.generation !== SESSION_GENERATION
+      parsed.generation !== SESSION_GENERATION ||
+      sessionExpired(parsed.issuedAt, now)
     ) {
       return null
     }

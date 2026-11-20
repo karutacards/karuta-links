@@ -1,5 +1,7 @@
 # Handoff: karuta-admin dump ingest
 
+Admin POSTs this contract. Cloudflare Bot Fight Mode is currently dropping those POSTs before the Worker. Fix that first: [ingest-bot-fight-mode.md](ingest-bot-fight-mode.md).
+
 Admin `actionqueue` `1120fcc` already POSTs this contract on hard production publish. Harvest fields: [karuta-admin-publish-data.md](karuta-admin-publish-data.md). Do not treat this file as permission to keep editing that tree.
 
 ## Trigger

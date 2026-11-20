@@ -6,7 +6,6 @@ import type {
   ContentSnapshot,
   ContestEntry,
   ContestSnapshot,
-  ContestWinner,
   EditionRecord,
   ListedContest,
   ListedDump,
@@ -117,21 +116,6 @@ function layout(
     }
     .counts { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 0.95rem; }
     .copy { white-space: pre-wrap; color: var(--muted); }
-    .winners {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 0.75rem;
-    }
-    .winner {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 1rem 1.1rem;
-    }
-    .winner .place { margin: 0; font-weight: 600; }
-    .winner .meta { margin: 0.35rem 0 0; }
     .user-id {
       display: block;
       margin: 0.35rem 0 0;
@@ -389,21 +373,6 @@ export function renderContentDump(
   })
 }
 
-function winnerList(winners: ContestWinner[]): string {
-  if (winners.length === 0) {
-    return ''
-  }
-  const items = winners.map((winner) => `<li class="winner">
-      <p class="place">Place ${winner.place}</p>
-      <p class="user-id">${escapeHtml(winner.userId)}</p>
-      <p class="meta">${escapeHtml(formatContestScore(winner.score))} · Award ${winner.reward}</p>
-    </li>`).join('')
-  return `<section>
-    <h2>Winners</h2>
-    <ol class="winners">${items}</ol>
-  </section>`
-}
-
 function medalPlace(index: number): 1 | 2 | 3 | null {
   if (index === 0) {
     return 1
@@ -458,7 +427,6 @@ export function renderContestDump(
   snapshot: ContestSnapshot,
   slug: string | null
 ): string {
-  // const winners = winnerList(snapshot.winners)
   const reference = snapshot.reference
     ? `<section>
         <h2>Reference card</h2>

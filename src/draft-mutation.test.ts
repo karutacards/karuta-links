@@ -353,4 +353,26 @@ describe('draft mutation', () => {
       })
     }
   })
+
+  it('slugs a key given on add the way imports do', () => {
+    const result = applyDraftMutation(null, {
+      type: 'series',
+      action: 'add',
+      key: '  One Piece! ',
+      name: 'One Piece'
+    }, new Set(), '1', 'craig')
+    expect(result.entity?.key).toBe('one-piece')
+    expect(() => applyDraftMutation(null, {
+      type: 'series',
+      action: 'add',
+      key: '!!!',
+      name: 'One Piece'
+    }, new Set(), '1', 'craig')).toThrow('Key is invalid.')
+    expect(() => applyDraftMutation(null, {
+      type: 'series',
+      action: 'add',
+      key: 'One Piece',
+      name: 'One Piece'
+    }, new Set(['one-piece']), '1', 'craig')).toThrow('That key is already in this draft.')
+  })
 })

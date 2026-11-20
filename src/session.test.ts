@@ -6,6 +6,7 @@ import {
   parseCookies,
   presentSecret,
   safeDraftNext,
+  SESSION_MAX_AGE,
   signSession,
   verifySession
 } from './session'
@@ -82,5 +83,13 @@ describe('session', () => {
 
   it('decodes a URL-encoded cookie value', () => {
     expect(parseCookies('oauth_state=abc%2Fdef')['oauth_state']).toBe('abc/def')
+  })
+
+  it('rejects a signed session older than the cookie max age', async () => {
+    const session = newSession('1', 'tester')
+    const signed = await signSession(session, SECRET)
+    const limit = session.issuedAt + SESSION_MAX_AGE * 1000
+    await expect(verifySession(signed, SECRET, limit)).resolves.toEqual(session)
+    await expect(verifySession(signed, SECRET, limit + 1)).resolves.toBeNull()
   })
 })

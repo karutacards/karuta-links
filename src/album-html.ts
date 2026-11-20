@@ -4,17 +4,13 @@ import { ALBUM_CSS } from './album-css'
 import { escapeHtml } from './escape'
 import { discordAvatarUrl } from './discord-avatar'
 import type { AlbumSnapshot } from './album-types'
-import type { Session } from './session'
+import type { SessionViewer } from './session'
 
 export const ALBUM_OAUTH_START = '/api/auth/discord?next=/albums'
 export const ALBUM_START_LEDE =
   'Sign in with Discord to plan albums from the cards you already own.'
 
-export type AlbumViewer = {
-  discordId: string
-  username: string
-  avatar: string
-}
+export type AlbumViewer = SessionViewer
 
 function embedJson(value: unknown): string {
   return JSON.stringify(value).replaceAll('<', '\\u003c')
@@ -139,12 +135,4 @@ export function renderAlbumEditor(
     <script>window.__ALBUMS__ = ${embedJson(boot)};</script>
     <script>${ALBUM_CLIENT_SCRIPT}</script>`
   )
-}
-
-export function viewerOf(session: Session): AlbumViewer {
-  return {
-    discordId: session.discordId,
-    username: session.username,
-    avatar: session.avatar
-  }
 }

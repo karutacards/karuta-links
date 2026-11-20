@@ -1,3 +1,4 @@
+import { parseDescription } from './draft-restore'
 import type { DraftAuditRow, DraftAuditSpan } from './draft-types'
 
 type AuditPayload = {
@@ -27,18 +28,6 @@ export function restoreTargetId(raw: string | null): number | null {
     return Number.isSafeInteger(eventId) && eventId > 0 ? eventId : null
   } catch {
     return null
-  }
-}
-
-function parseDescription(raw: string | null): string {
-  if (!raw) return ''
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object') return ''
-    const description = (parsed as Record<string, unknown>).description
-    return typeof description === 'string' ? description : ''
-  } catch {
-    return ''
   }
 }
 

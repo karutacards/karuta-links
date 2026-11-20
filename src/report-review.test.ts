@@ -123,4 +123,46 @@ describe('report review routes', () => {
     )
     expect(response.status).toBe(429)
   })
+
+  it('counts a wrong bearer against the shared limit before checking it', async () => {
+    const keys: string[] = []
+    const counting = reviewEnv({
+      REPORT_REVIEW: {
+        limit: async ({ key }: { key: string }) => {
+          keys.push(key)
+          return { success: true }
+        }
+      }
+    })
+    const wrong = await app.request(
+      'http://127.0.0.1:8787/api/v1/reports',
+      { headers: auth('guess') },
+      counting
+    )
+    expect(wrong.status).toBe(401)
+    expect(keys).toEqual(['review'])
+
+    const limited = await app.request(
+      'http://127.0.0.1:8787/api/v1/reports',
+      { headers: auth('guess') },
+      reviewEnv({ REPORT_REVIEW: { limit: async () => ({ success: false }) } })
+    )
+    expect(limited.status).toBe(429)
+  })
+
+  it('answers an unreadable stored row with 503 on both routes', async () => {
+    const corrupt = { ...storedRow, user_ids: 'not-json' }
+    const one = await app.request(
+      'http://127.0.0.1:8787/api/v1/reports/12',
+      { headers: auth() },
+      reviewEnv({ DB: reviewDb({ row: corrupt }) })
+    )
+    expect(one.status).toBe(503)
+    const list = await app.request(
+      'http://127.0.0.1:8787/api/v1/reports',
+      { headers: auth() },
+      reviewEnv({ DB: reviewDb({ rows: [corrupt] }) })
+    )
+    expect(list.status).toBe(503)
+  })
 })

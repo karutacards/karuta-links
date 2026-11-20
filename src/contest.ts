@@ -54,8 +54,7 @@ function parseWinner(value: unknown): ContestWinner | null {
 
 export function parseContestEntry(
   cardId: string,
-  data: Record<string, unknown>,
-  eventCounter: number
+  data: Record<string, unknown>
 ): ContestEntry {
   const score = asNumber(data.contestScore) ?? -1
   const sourceUrl = asString(data.contestImageUrl) || null
@@ -102,7 +101,7 @@ export function buildContestSnapshot(
   event: Record<string, unknown>,
   entries: Array<{ id: string; data: Record<string, unknown> }>
 ): ContestSnapshot {
-  const parsed = entries.map((row) => parseContestEntry(row.id, row.data, eventCounter))
+  const parsed = entries.map((row) => parseContestEntry(row.id, row.data))
   parsed.sort(compareContestEntries)
   const winners = Array.isArray(event.winners)
     ? event.winners.map(parseWinner).filter((row): row is ContestWinner => row !== null)

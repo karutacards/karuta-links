@@ -125,6 +125,25 @@ async function signJwt(message: string, pem: string): Promise<string> {
     .replace(/=/g, '')
 }
 
+export function resetFirestoreTokenCache(): void {
+  tokenCache = null
+}
+
+// A cached token can be revoked before its 50 minutes are up. On a 401 or 403
+// the cache is cleared and the request is tried once more with a fresh token.
+async function authorizedFetch(serviceAccountJson: string, url: string | URL): Promise<Response> {
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${await accessToken(serviceAccountJson)}` }
+  })
+  if (response.status !== 401 && response.status !== 403) {
+    return response
+  }
+  tokenCache = null
+  return fetch(url, {
+    headers: { authorization: `Bearer ${await accessToken(serviceAccountJson)}` }
+  })
+}
+
 function documentsUrl(projectId: string, documentPath: string): string {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${documentPath}`
 }
@@ -134,10 +153,7 @@ export async function getFirestoreDocument(
   serviceAccountJson: string,
   documentPath: string
 ): Promise<Record<string, unknown> | null> {
-  const token = await accessToken(serviceAccountJson)
-  const response = await fetch(documentsUrl(projectId, documentPath), {
-    headers: { authorization: `Bearer ${token}` }
-  })
+  const response = await authorizedFetch(serviceAccountJson, documentsUrl(projectId, documentPath))
   if (response.status === 404) return null
   if (!response.ok) {
     throw new Error(`Firestore read failed: ${response.status}`)
@@ -151,16 +167,13 @@ export async function listFirestoreDocuments(
   serviceAccountJson: string,
   collectionPath: string
 ): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
-  const token = await accessToken(serviceAccountJson)
   const rows: Array<{ id: string; data: Record<string, unknown> }> = []
   let pageToken = ''
   do {
     const url = new URL(documentsUrl(projectId, collectionPath))
     url.searchParams.set('pageSize', '300')
     if (pageToken) url.searchParams.set('pageToken', pageToken)
-    const response = await fetch(url, {
-      headers: { authorization: `Bearer ${token}` }
-    })
+    const response = await authorizedFetch(serviceAccountJson, url)
     if (response.status === 404) return rows
     if (!response.ok) {
       throw new Error(`Firestore list failed: ${response.status}`)

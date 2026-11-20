@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from './app'
 import { resetBlacklistCache } from './draft-access'
+import { REPORT_SENT_PATH } from './report'
 import { REPORT_BANNED_MESSAGE } from './report-access'
 import { createSessionCookie, newSession, parseCookies, NEXT_COOKIE } from './session'
 
@@ -31,7 +32,9 @@ async function gzipJson(value: unknown): Promise<ArrayBuffer> {
   return await new Response(stream).arrayBuffer()
 }
 
-function reportDb(options: { banned?: boolean; recent?: number } = {}): D1Database {
+function reportDb(
+  options: { banned?: boolean; recent?: number; failInsert?: boolean } = {}
+): D1Database {
   return {
     prepare(sql: string) {
       const statement = {
@@ -44,13 +47,15 @@ function reportDb(options: { banned?: boolean; recent?: number } = {}): D1Databa
           if (sql.includes('report_bans')) {
             return options.banned ? { discord_id: '1' } : null
           }
-          if (sql.includes('COUNT(*)')) {
-            return { count: options.recent ?? 0 }
-          }
           return null
         },
         async run() {
-          return { success: true, meta: { last_row_id: 3 } }
+          if (options.failInsert) {
+            throw new Error('D1_ERROR: database is locked')
+          }
+          // The insert carries its own hourly count, so a full hour inserts nothing.
+          const limited = sql.includes('COUNT(*)') && (options.recent ?? 0) >= 10
+          return { success: true, meta: { changes: limited ? 0 : 1, last_row_id: 3 } }
         }
       }
       return statement
@@ -171,7 +176,7 @@ describe('report routes', () => {
     expect(await response.text()).toContain('Enter at least one user ID, server ID or channel ID.')
   })
 
-  it('stores a valid report and thanks the reporter', async () => {
+  it('stores a valid report and redirects to the thank-you page', async () => {
     const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
     const body = new URLSearchParams({
       reason: 'scamming',
@@ -191,8 +196,58 @@ describe('report routes', () => {
       },
       await allowedEnv()
     )
-    expect(response.status).toBe(200)
-    expect(await response.text()).toContain('Your report has been received.')
+    expect(response.status).toBe(303)
+    expect(response.headers.get('Location')).toBe(REPORT_SENT_PATH)
+
+    const thanks = await app.request(
+      `http://127.0.0.1:8787${REPORT_SENT_PATH}`,
+      { headers: { Cookie: cookie.split(';')[0] ?? '' } },
+      await allowedEnv()
+    )
+    expect(thanks.status).toBe(200)
+    const page = await thanks.text()
+    expect(page).toContain('Your report has been received.')
+    expect(page).toContain('href="/report"')
+  })
+
+  it('shows the unavailable page when the report cannot be saved', async () => {
+    const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
+    const response = await app.request(
+      'http://127.0.0.1:8787/report',
+      {
+        method: 'POST',
+        headers: {
+          Cookie: cookie.split(';')[0] ?? '',
+          'content-type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          reason: 'botting',
+          user_ids: '135694375647838208',
+          acknowledged: 'on'
+        })
+      },
+      await allowedEnv({ DB: reportDb({ failInsert: true }) })
+    )
+    expect(response.status).toBe(503)
+    expect(await response.text()).toContain('Your report could not be saved. Try again later.')
+  })
+
+  it('re-renders the form when the body cannot be read', async () => {
+    const cookie = await createSessionCookie(newSession('1', 'player'), 'test-session-secret', false)
+    const response = await app.request(
+      'http://127.0.0.1:8787/report',
+      {
+        method: 'POST',
+        headers: {
+          Cookie: cookie.split(';')[0] ?? '',
+          'content-type': 'multipart/form-data; boundary=missing'
+        },
+        body: 'not multipart'
+      },
+      await allowedEnv()
+    )
+    expect(response.status).toBe(400)
+    expect(await response.text()).toContain('The form could not be read. Please try again.')
   })
 
   it('rate-limits an 11th report in one hour', async () => {

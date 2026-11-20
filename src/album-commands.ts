@@ -1,5 +1,11 @@
 import { albumBackgroundName } from './album-backgrounds'
-import { isValidAlbumName, normalizeAlbumName } from './album-names'
+import {
+  ALBUM_NAME_RULE,
+  ALBUM_NAME_TAKEN,
+  isValidAlbumName,
+  normalizeAlbumName,
+  planAlbumRenames
+} from './album-names'
 import { DEFAULT_ALBUM_BACKGROUND, type AlbumSnapshot, type CompactCard, type EditorAlbum, type SnapshotAlbum } from './album-types'
 
 const PREFIX = 'k!'
@@ -48,23 +54,16 @@ function sameCard(left?: CompactCard, right?: CompactCard): boolean {
   return Boolean(left && right && left.instanceKey === right.instanceKey)
 }
 
+// Renames run before this, so `working` is already the album's final name.
 function emitAlbumDiff(
   lines: string[],
   snapshotAlbum: SnapshotAlbum | null,
   editor: EditorAlbum,
   cards: Map<string, CompactCard>
-): string | null {
-  const name = normalizeAlbumName(editor.name)
-  if (!isValidAlbumName(name)) {
-    return 'Album names start with a letter and stay under 16 characters.'
-  }
-  let working = snapshotAlbum?.id ?? name
+): void {
+  const working = normalizeAlbumName(editor.name)
   if (!snapshotAlbum) {
-    lines.push(`${PREFIX}acreate ${name}`)
-    working = name
-  } else if (snapshotAlbum.id !== name) {
-    lines.push(`${PREFIX}arename ${snapshotAlbum.id} ${name}`)
-    working = name
+    lines.push(`${PREFIX}acreate ${working}`)
   }
 
   const beforePages = snapshotAlbum ? snapshotPages(snapshotAlbum) : 1
@@ -106,23 +105,43 @@ function emitAlbumDiff(
       }
     }
   }
-  return null
 }
 
 export function albumCommandDiff(snapshot: AlbumSnapshot, editors: EditorAlbum[]): string {
   const names = editors.map((album) => normalizeAlbumName(album.name))
+  if (names.some((name) => !isValidAlbumName(name))) {
+    return `# ${ALBUM_NAME_RULE}`
+  }
   if (new Set(names).size !== names.length) {
-    return '# That name is already used by another album.'
+    return `# ${ALBUM_NAME_TAKEN}`
   }
   const cards = new Map(snapshot.cards.map((card) => [card.instanceKey, card]))
   const byId = new Map(snapshot.albums.map((album) => [album.id, album]))
-  const lines: string[] = []
-  for (const editor of editors) {
-    const source = editor.sourceId ? byId.get(editor.sourceId) ?? null : null
-    const error = emitAlbumDiff(lines, source, editor, cards)
-    if (error) {
-      return `# ${error}`
+  const sources = editors.map((editor) =>
+    editor.sourceId ? byId.get(editor.sourceId) ?? null : null
+  )
+  const renames: Array<[string, string]> = []
+  sources.forEach((source, index) => {
+    const name = names[index]
+    if (source && name !== undefined && source.id !== name) {
+      renames.push([source.id, name])
     }
+  })
+  const plan = planAlbumRenames(byId.keys(), renames)
+  if (!plan) {
+    return `# ${ALBUM_NAME_TAKEN}`
   }
+  const held = new Set(byId.keys())
+  for (const [from, to] of plan) {
+    held.delete(from)
+    held.add(to)
+  }
+  if (names.some((name, index) => !sources[index] && held.has(name))) {
+    return `# ${ALBUM_NAME_TAKEN}`
+  }
+  const lines = plan.map(([from, to]) => `${PREFIX}arename ${from} ${to}`)
+  editors.forEach((editor, index) => {
+    emitAlbumDiff(lines, sources[index] ?? null, editor, cards)
+  })
   return lines.length ? lines.join('\n') : '# No changes to paste.'
 }

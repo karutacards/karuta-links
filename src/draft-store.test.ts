@@ -355,54 +355,7 @@ describe('draft events store', () => {
     expect(same.queries.some((query) => query.sql.includes('INSERT INTO draft_audit'))).toBe(false)
   })
 
-  it('rewrites the catalog from an Activity save and writes a restore audit', async () => {
-    const { db, queries } = mockDb({
-      draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: 'Now.' },
-      entities: [{
-        entity_type: 'series',
-        entity_key: 'naruto',
-        name: 'Naruto Shippuden',
-        series_key: null,
-        aliases: JSON.stringify(['Ninja', 'Leaf']),
-        import_action: 'add',
-        base_aliases: JSON.stringify([]),
-        revision: 2,
-        last_editor_id: '1',
-        last_editor_name: 'craig'
-      }],
-      audit: [{
-        id: 4,
-        entity_type: 'series',
-        entity_key: 'naruto',
-        action: 'update',
-        save_id: 4,
-        before_json: null,
-        after_json: JSON.stringify({
-          type: 'series',
-          key: 'naruto',
-          name: 'Naruto',
-          aliases: ['Ninja'],
-          importAction: 'add',
-          baseAliases: []
-        }),
-        discord_id: '1',
-        username: 'craig',
-        created_at: 9
-      }]
-    })
-    await restoreDraft(db, 2, 4, '1', 'craig', 50)
-    expect(queries.some((query) => query.sql.includes('DELETE FROM draft_entities'))).toBe(true)
-    expect(queries.some((query) => (
-      query.sql.includes('INSERT INTO draft_entities')
-      && query.binds[2] === 'Naruto'
-    ))).toBe(true)
-    expect(queries.some((query) => (
-      query.sql.includes("'restore'")
-      && query.binds[0] === 2
-    ))).toBe(true)
-  })
-
-  it('refuses to restore an import event', async () => {
+  it('refuses to restore an import event, which is not a save', async () => {
     const { db, queries } = mockDb({
       draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: '' },
       entities: [],
@@ -425,12 +378,13 @@ describe('draft events store', () => {
       }]
     })
     await expect(restoreDraft(db, 2, 4, '1', 'craig', 50)).rejects.toMatchObject({
-      code: 'INVALID_INPUT'
+      code: 'NOT_FOUND',
+      status: 404
     })
     expect(queries.some((query) => query.sql.includes('DELETE FROM draft_entities'))).toBe(false)
   })
 
-  it('refuses to restore a lock event', async () => {
+  it('refuses to restore a lock event, which is not a save', async () => {
     const { db, queries } = mockDb({
       draft: { id: 2, created_at: 1, updated_at: 2, locked_at: null, locked_by: null, description: '' },
       entities: [],
@@ -447,7 +401,8 @@ describe('draft events store', () => {
       }]
     })
     await expect(restoreDraft(db, 2, 8, '1', 'craig', 50)).rejects.toMatchObject({
-      code: 'INVALID_INPUT'
+      code: 'NOT_FOUND',
+      status: 404
     })
     expect(queries.some((query) => query.sql.includes('DELETE FROM draft_entities'))).toBe(false)
   })

@@ -277,7 +277,7 @@ function identityKey(type: DraftEntityType, key: string): string {
   return `${type}:${key}`
 }
 
-function parseDescription(raw: string | null): string {
+export function parseDescription(raw: string | null): string {
   if (!raw) return ''
   try {
     const parsed = JSON.parse(raw) as unknown
@@ -400,7 +400,7 @@ function sameCharacters(
   })
 }
 
-function sameAliases(left: readonly string[], right: readonly string[]): boolean {
+export function sameAliases(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) return false
   return left.every((value, index) => value === right[index])
 }

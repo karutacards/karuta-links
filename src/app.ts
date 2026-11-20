@@ -9,6 +9,8 @@ import { registerAlbums } from './albums'
 import { registerDrafts } from './drafts'
 import { registerOAuth } from './oauth'
 import { registerReports } from './report'
+import { readLimitedText } from './request-body'
+import { parsePositiveInt, isShortLinkSegment } from './routing'
 import { CONTENT_SECTION } from './types'
 
 export const app = new Hono<{ Bindings: Env }>()
@@ -65,14 +67,15 @@ app.post('/api/v1/content', async (c) => {
     return json({ error: 'Unauthorized' }, 401)
   }
 
-  const lengthHeader = c.req.header('content-length')
-  if (lengthHeader && Number(lengthHeader) > MAX_INGEST_BYTES) {
+  // Stops reading at the limit, whether or not the client sent a Content-Length.
+  const raw = await readLimitedText(c.req.raw, MAX_INGEST_BYTES)
+  if (raw === null) {
     return json({ error: 'Payload too large' }, 413)
   }
 
   let body: unknown
   try {
-    body = await c.req.json()
+    body = JSON.parse(raw)
   } catch {
     return json({ error: 'Body must be JSON' }, 400)
   }
@@ -80,9 +83,7 @@ app.post('/api/v1/content', async (c) => {
   try {
     const snapshot = parseContentSnapshot(body)
     const created = await insertContentDump(c.env.DB, snapshot)
-    if (c.env.IMAGES) {
-      c.executionCtx.waitUntil(ensureSnapshotImages(c.env.IMAGES, snapshot))
-    }
+    c.executionCtx.waitUntil(ensureSnapshotImages(c.env.IMAGES, snapshot))
     c.executionCtx.waitUntil(dispatchCatalogRefresh(c.env, created.id))
     const path = `/content/${created.id}`
     const shortPath = `/${created.slug}`
@@ -105,9 +106,6 @@ app.post('/api/v1/content', async (c) => {
 
 app.get('/images/*', async (c) => {
   const objectKey = new URL(c.req.url).pathname.replace(/^\/images\//, '')
-  if (!c.env.IMAGES) {
-    return new Response('Not found', { status: 404 })
-  }
   return serveKeyedImage(c.env.IMAGES, objectKey, c.req.url)
 })
 
@@ -117,9 +115,8 @@ app.get('/contests', async (c) => {
 })
 
 app.get('/contests/:id', async (c) => {
-  const rawId = c.req.param('id')
-  const id = /^[1-9][0-9]*$/.test(rawId) ? Number(rawId) : NaN
-  if (!Number.isSafeInteger(id)) {
+  const id = parsePositiveInt(c.req.param('id'))
+  if (id === null) {
     return html(renderNotFound(), 404)
   }
   const document = await getContestDocument(c.env.DB, id)
@@ -130,9 +127,8 @@ app.get('/contests/:id', async (c) => {
 })
 
 app.get('/content/:id', async (c) => {
-  const rawId = c.req.param('id')
-  const id = /^[1-9][0-9]*$/.test(rawId) ? Number(rawId) : NaN
-  if (!Number.isSafeInteger(id)) {
+  const id = parsePositiveInt(c.req.param('id'))
+  if (id === null) {
     return html(renderNotFound(), 404)
   }
   const document = await getDocument(c.env.DB, CONTENT_SECTION, id)
@@ -144,7 +140,7 @@ app.get('/content/:id', async (c) => {
 
 app.get('/:slug', async (c) => {
   const slug = c.req.param('slug')
-  if (!/^[a-z0-9]{6}$/.test(slug)) {
+  if (!isShortLinkSegment(slug)) {
     return html(renderNotFound(), 404)
   }
   const target = await resolveSlug(c.env.DB, slug)
