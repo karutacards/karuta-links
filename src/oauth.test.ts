@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from './app'
 import { resetBlacklistCache } from './draft-access'
-import { callbackRedirectUri } from './oauth'
+import { callbackRedirectUri, DISCORD_UNREACHABLE_MESSAGE } from './oauth'
+import { REPORT_ACCESS_DENIED_MESSAGE } from './report-access'
 import { parseCookies, NEXT_COOKIE, SESSION_COOKIE, STATE_COOKIE } from './session'
 
 function testEnv(overrides: Partial<Env> = {}): Env {
@@ -315,5 +316,67 @@ describe('oauth', () => {
     await expect(response.json()).resolves.toEqual({ authenticated: false })
     const cleared = response.headers.getSetCookie().find((cookie) => cookie.startsWith('session='))
     expect(cleared).toMatch(/Max-Age=0/)
+  })
+
+  it('answers 503 when Discord cannot be reached during the callback', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')))
+    const start = await app.request('http://127.0.0.1:8787/api/auth/discord', {}, testEnv())
+    const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
+    const callback = await app.request(
+      `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
+      { headers: { Cookie: firstCookie(start, STATE_COOKIE) ?? '' } },
+      testEnv()
+    )
+    expect(callback.status).toBe(503)
+    await expect(callback.json()).resolves.toEqual({ error: DISCORD_UNREACHABLE_MESSAGE })
+  })
+
+  it('answers 503 when Discord returns a body that is not JSON', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('<html>busy</html>', { status: 200 }))
+    )
+    const start = await app.request('http://127.0.0.1:8787/api/auth/discord', {}, testEnv())
+    const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
+    const callback = await app.request(
+      `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
+      { headers: { Cookie: firstCookie(start, STATE_COOKIE) ?? '' } },
+      testEnv()
+    )
+    expect(callback.status).toBe(503)
+  })
+
+  it('refuses a blacklisted reporter with the report page wording', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: '135694375647838208', username: 'tester' }), {
+          status: 200
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const start = await app.request(
+      'http://127.0.0.1:8787/api/auth/discord?next=/report',
+      {},
+      testEnv()
+    )
+    const state = parseCookies(firstCookie(start, STATE_COOKIE) ?? null)[STATE_COOKIE]
+    const next = firstCookie(start, NEXT_COOKIE)
+    const blocked = await envWithBlacklist([{ type: 'User', id: '135694375647838208' }])
+    const callback = await app.request(
+      `http://127.0.0.1:8787/api/auth/callback?code=oauth-code&state=${state}`,
+      { headers: { Cookie: `${firstCookie(start, STATE_COOKIE) ?? ''}; ${next ?? ''}` } },
+      blocked
+    )
+    expect(callback.status).toBe(403)
+    const page = await callback.text()
+    expect(page).toContain(REPORT_ACCESS_DENIED_MESSAGE)
+    expect(page).not.toContain('draft')
+    expect(firstCookie(callback, SESSION_COOKIE)).toBeUndefined()
   })
 })

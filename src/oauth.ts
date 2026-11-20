@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
 import { draftIdentityForEnv } from './draft-access'
 import { renderDraftForbidden, renderDraftUnavailable } from './draft-html'
+import { REPORT_ACCESS_DENIED_MESSAGE } from './report-access'
+import { renderReportForbidden, renderReportUnavailable } from './report-html'
 import {
   clearNextCookie,
   clearSessionCookie,
@@ -75,6 +77,27 @@ function redirect(location: string, cookies: string[]): Response {
   return new Response(null, { status: 302, headers })
 }
 
+export const DISCORD_UNREACHABLE_MESSAGE = 'Discord could not be reached. Try again later.'
+
+// A refusal from Discord is null. A network failure or a body that is not JSON
+// throws, and the callback answers that with a 503.
+async function discordJson(input: string, init: RequestInit): Promise<unknown> {
+  const response = await fetch(input, init)
+  if (!response.ok) {
+    return null
+  }
+  return (await response.json()) as unknown
+}
+
+function refusalPage(next: string | null, status: 403 | 503): string {
+  if (next === '/report') {
+    return status === 503
+      ? renderReportUnavailable()
+      : renderReportForbidden(REPORT_ACCESS_DENIED_MESSAGE)
+  }
+  return status === 503 ? renderDraftUnavailable() : renderDraftForbidden()
+}
+
 export function authorizeUrl(clientId: string, redirectUri: string, state: string): string {
   const params = new URLSearchParams({
     client_id: clientId,
@@ -98,29 +121,21 @@ async function exchangeCode(
     code,
     redirect_uri: redirectUri
   })
-  const response = await fetch(DISCORD_TOKEN_URL, {
+  const payload = (await discordJson(DISCORD_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body
-  })
-  if (!response.ok) {
-    return null
-  }
-  const payload = (await response.json()) as { access_token?: unknown }
-  return typeof payload.access_token === 'string' ? payload.access_token : null
+  })) as { access_token?: unknown } | null
+  return typeof payload?.access_token === 'string' ? payload.access_token : null
 }
 
 async function identifyUser(
   accessToken: string
 ): Promise<{ id: string; username: string; avatar: string } | null> {
-  const response = await fetch(DISCORD_IDENTIFY_URL, {
+  const payload = (await discordJson(DISCORD_IDENTIFY_URL, {
     headers: { authorization: `Bearer ${accessToken}` }
-  })
-  if (!response.ok) {
-    return null
-  }
-  const payload = (await response.json()) as { id?: unknown; username?: unknown; avatar?: unknown }
-  if (typeof payload.id !== 'string' || typeof payload.username !== 'string') {
+  })) as { id?: unknown; username?: unknown; avatar?: unknown } | null
+  if (!payload || typeof payload.id !== 'string' || typeof payload.username !== 'string') {
     return null
   }
   return { id: payload.id, username: payload.username, avatar: parseDiscordAvatar(payload.avatar) }
@@ -170,14 +185,21 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
     if (!expectedState || !returnedState || expectedState !== returnedState) {
       return json({ error: 'The OAuth state does not match.' }, 400)
     }
-    const accessToken = await exchangeCode(c.env, code, redirectUri)
-    if (!accessToken) {
-      return json({ error: 'Discord did not complete authorization.' }, 401)
+    let user: Awaited<ReturnType<typeof identifyUser>>
+    try {
+      const accessToken = await exchangeCode(c.env, code, redirectUri)
+      if (!accessToken) {
+        return json({ error: 'Discord did not complete authorization.' }, 401)
+      }
+      user = await identifyUser(accessToken)
+    } catch (error) {
+      console.error(`OAUTH DISCORD :: ${error instanceof Error ? error.message : String(error)}`)
+      return json({ error: DISCORD_UNREACHABLE_MESSAGE }, 503)
     }
-    const user = await identifyUser(accessToken)
     if (!user) {
       return json({ error: 'Discord did not return a user.' }, 401)
     }
+    const next = safeDraftNext(cookies[NEXT_COOKIE])
     const decision = await draftIdentityForEnv(c.env, user.id)
     if (!decision.ok) {
       const headers = new Headers({
@@ -188,18 +210,14 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
       })
       headers.append('Set-Cookie', clearStateCookie(https))
       headers.append('Set-Cookie', clearNextCookie(https))
-      return new Response(
-        decision.status === 503 ? renderDraftUnavailable() : renderDraftForbidden(),
-        { status: decision.status, headers }
-      )
+      return new Response(refusalPage(next, decision.status), { status: decision.status, headers })
     }
     const sessionCookie = await createSessionCookie(
       newSession(user.id, user.username, user.avatar),
       c.env.SESSION_SECRET,
       https
     )
-    const next = safeDraftNext(cookies[NEXT_COOKIE]) ?? '/'
-    return redirect(next, [sessionCookie, clearStateCookie(https), clearNextCookie(https)])
+    return redirect(next ?? '/', [sessionCookie, clearStateCookie(https), clearNextCookie(https)])
   })
 
   app.get('/api/auth/me', async (c) => {

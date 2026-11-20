@@ -31,8 +31,8 @@ describe('draft access', () => {
       cardGrabbed: '40',
       usdSpent: 2.5
     })).toEqual({ drops: 12, grabs: 40, purchases: 1 })
-    expect(meetsCredentials({ drops: 1000, grabs: 0, purchases: 0 }, credentials)).toBe(true)
-    expect(meetsCredentials({ drops: 0, grabs: 0, purchases: 0 }, credentials)).toBe(false)
+    expect(meetsCredentials({ drops: 1000, grabs: 0, purchases: 0 }, credentials.credentials)).toBe(true)
+    expect(meetsCredentials({ drops: 0, grabs: 0, purchases: 0 }, credentials.credentials)).toBe(false)
   })
 
   it('denies a blacklisted user in every mode without naming the reason', async () => {
@@ -48,9 +48,9 @@ describe('draft access', () => {
     }
     await expect(evaluateDraftAccess('1', parseDraftsConfig({ access: 'open' }), loaders))
       .resolves.toEqual(denied)
-    await expect(evaluateDraftAccess('1', parseDraftsConfig({
+    await expect(evaluateDraftAccess('111111111111111111', parseDraftsConfig({
       access: 'whitelist',
-      whitelist: ['1']
+      whitelist: ['111111111111111111']
     }), loaders)).resolves.toEqual(denied)
     await expect(evaluateDraftAccess('1', credentials, loaders)).resolves.toEqual(denied)
   })
@@ -82,12 +82,12 @@ describe('draft access', () => {
   })
 
   it('limits whitelist mode to listed ids', async () => {
-    const config = parseDraftsConfig({ access: 'whitelist', whitelist: ['9'] })
-    await expect(evaluateDraftAccess('9', config, {
+    const config = parseDraftsConfig({ access: 'whitelist', whitelist: ['999999999999999999'] })
+    await expect(evaluateDraftAccess('999999999999999999', config, {
       isBlacklisted: async () => false,
       getPlayerStats: async () => null
     })).resolves.toEqual({ ok: true })
-    await expect(evaluateDraftAccess('8', config, {
+    await expect(evaluateDraftAccess('888888888888888888', config, {
       isBlacklisted: async () => false,
       getPlayerStats: async () => null
     })).resolves.toMatchObject({ ok: false, status: 403 })

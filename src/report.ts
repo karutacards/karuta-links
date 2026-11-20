@@ -3,13 +3,13 @@ import type { AccessDenied } from './draft-access'
 import { oauthConfigured } from './oauth'
 import { reportAccessForEnv } from './report-access'
 import {
+  REPORT_SAVE_FAILED_MESSAGE,
   renderReportForbidden,
   renderReportForm,
   renderReportRateLimited,
   renderReportStart,
   renderReportThanks,
-  renderReportUnavailable,
-  type ReportViewer
+  renderReportUnavailable
 } from './report-html'
 import {
   REPORT_OG_BYTES,
@@ -17,33 +17,24 @@ import {
   REPORT_OG_PATH
 } from './report-og'
 import { registerReportReview } from './report-review'
-import {
-  countRecentReports,
-  insertReport,
-  REPORT_RATE_LIMIT,
-  REPORT_RATE_WINDOW_MS
-} from './report-store'
+import { insertReport } from './report-store'
 import { fieldsFromForm, parseReportFields } from './report-validate'
-import { getSession, type Session } from './session'
+import { getSession, viewerOf, type Session } from './session'
+
+export const REPORT_SENT_PATH = '/report?sent=1'
+export const REPORT_FORM_UNREADABLE_MESSAGE = 'The form could not be read. Please try again.'
+
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'x-frame-options': 'DENY'
+}
 
 function html(body: string, status = 200): Response {
   return new Response(body, {
     status,
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY'
-    }
+    headers: { 'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS }
   })
-}
-
-function viewerOf(session: Session): ReportViewer {
-  return {
-    discordId: session.discordId,
-    username: session.username,
-    avatar: session.avatar
-  }
 }
 
 function accessHtml(decision: AccessDenied, session: Session): Response {
@@ -99,7 +90,11 @@ export function registerReports(app: Hono<{ Bindings: Env }>): void {
     if ('missing' in gated) {
       return html(renderReportStart())
     }
-    return html(renderReportForm({ viewer: viewerOf(gated.session) }))
+    const viewer = viewerOf(gated.session)
+    if (c.req.query('sent') === '1') {
+      return html(renderReportThanks(viewer))
+    }
+    return html(renderReportForm({ viewer }))
   })
 
   app.post('/report', async (c) => {
@@ -110,28 +105,35 @@ export function registerReports(app: Hono<{ Bindings: Env }>): void {
     if ('missing' in gated) {
       return startOAuth(c.req.raw)
     }
-    const form = await c.req.formData()
+    const viewer = viewerOf(gated.session)
+    let form: FormData
+    try {
+      form = await c.req.formData()
+    } catch {
+      return html(renderReportForm({ error: REPORT_FORM_UNREADABLE_MESSAGE, viewer }), 400)
+    }
     const parsed = parseReportFields(fieldsFromForm(form))
     if ('error' in parsed) {
-      return html(
-        renderReportForm({
-          error: parsed.message,
-          fields: parsed.fields,
-          viewer: viewerOf(gated.session)
-        }),
-        400
-      )
+      return html(renderReportForm({ error: parsed.message, fields: parsed.fields, viewer }), 400)
     }
-    const since = Date.now() - REPORT_RATE_WINDOW_MS
-    const recent = await countRecentReports(c.env.DB, gated.session.discordId, since)
-    if (recent >= REPORT_RATE_LIMIT) {
-      return html(renderReportRateLimited(viewerOf(gated.session)), 429)
+    let stored
+    try {
+      stored = await insertReport(c.env.DB, {
+        reporterId: gated.session.discordId,
+        reporterUsername: gated.session.username,
+        payload: parsed
+      })
+    } catch (error) {
+      console.error(`REPORT SAVE :: ${error instanceof Error ? error.message : String(error)}`)
+      return html(renderReportUnavailable(viewer, REPORT_SAVE_FAILED_MESSAGE), 503)
     }
-    await insertReport(c.env.DB, {
-      reporterId: gated.session.discordId,
-      reporterUsername: gated.session.username,
-      payload: parsed
+    if (!stored) {
+      return html(renderReportRateLimited(viewer), 429)
+    }
+    // Post/Redirect/Get, so refreshing the thank-you page cannot submit the report again.
+    return new Response(null, {
+      status: 303,
+      headers: { Location: REPORT_SENT_PATH, ...SECURITY_HEADERS }
     })
-    return html(renderReportThanks(viewerOf(gated.session)))
   })
 }

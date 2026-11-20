@@ -1,8 +1,154 @@
+// Pure helpers the page script uses. They take no page state, so tests can run
+// them directly and compare the command diff with the server's albumCommandDiff.
+export const ALBUM_CLIENT_HELPERS = `
+  var PREFIX = "k!";
+  var NAME_RULE = "# Album names start with a letter and are 16 characters or fewer.";
+  var NAME_TAKEN = "# That name is already used by another album.";
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+  function slotKey(page, slot) { return page + ":" + slot; }
+  function normalizeName(value) { return String(value || "").trim().toLowerCase(); }
+  function isValidAlbumName(value) {
+    return value.length <= 16 && /^[a-zA-Z][a-zA-Z0-9\\-_]*$/.test(value);
+  }
+  function portraitUrl(card) {
+    var file = encodeURIComponent(card.character) + "-" + card.edition;
+    if (card.version > 0) file = "versioned/" + file + "-" + card.version;
+    return "/images/characters/" + file + ".jpg";
+  }
+  function stars(quality) {
+    var good = Math.max(0, 4 - Number(quality || 0));
+    return "★".repeat(good) + "☆".repeat(4 - good);
+  }
+  function chrome(card) {
+    var dye = card.dye ? '<i class="dye" style="background:' + esc(card.dye) + '"></i>' : "";
+    return '<div class="tile"><img class="portrait" src="' + esc(portraitUrl(card)) + '" alt="" decoding="async">' +
+      '<div class="chrome"><strong>' + esc(card.code) + '</strong>#' + esc(card.number) +
+      ' · ◈' + esc(card.edition) + ' <span class="stars">' + stars(card.quality) + "</span>" + dye + "</div></div>";
+  }
+  function snapshotPages(album) {
+    return Math.max(1, Math.ceil((album.cards || []).length / 8) || 1);
+  }
+  function slotsFromCards(album, cards) {
+    var slots = {};
+    (album.cards || []).forEach(function (key, index) {
+      if (!key || !cards[key]) return;
+      slots[slotKey(Math.floor(index / 8) + 1, (index % 8) + 1)] = cards[key];
+    });
+    return slots;
+  }
+  // Mirrors planAlbumRenames in album-names.ts.
+  function planRenames(held, renames) {
+    var taken = {};
+    held.forEach(function (name) { taken[name] = true; });
+    var targets = {};
+    renames.forEach(function (pair) { targets[pair[1]] = true; });
+    var pending = renames.map(function (pair) { return { from: pair[0], to: pair[1] }; });
+    var plan = [];
+    var spare = 1;
+    while (pending.length > 0) {
+      var index = -1;
+      for (var i = 0; i < pending.length; i += 1) {
+        if (!taken[pending[i].to]) { index = i; break; }
+      }
+      if (index !== -1) {
+        var rename = pending.splice(index, 1)[0];
+        plan.push([rename.from, rename.to]);
+        delete taken[rename.from];
+        taken[rename.to] = true;
+        continue;
+      }
+      var sources = {};
+      pending.forEach(function (item) { sources[item.from] = true; });
+      if (pending.some(function (item) { return !sources[item.to]; })) return null;
+      while (taken["tmp" + spare] || targets["tmp" + spare]) spare += 1;
+      var temporary = "tmp" + spare;
+      plan.push([pending[0].from, temporary]);
+      delete taken[pending[0].from];
+      taken[temporary] = true;
+      pending[0].from = temporary;
+    }
+    return plan;
+  }
+  // Mirrors albumCommandDiff in album-commands.ts.
+  function diffAlbums(snapshot, albums, bgName) {
+    var names = albums.map(function (editor) { return normalizeName(editor.name); });
+    if (names.some(function (name) { return !isValidAlbumName(name); })) return NAME_RULE;
+    if (names.some(function (name, index) { return names.indexOf(name) !== index; })) return NAME_TAKEN;
+    var cards = {};
+    snapshot.cards.forEach(function (card) { cards[card.instanceKey] = card; });
+    var byId = {};
+    var heldNames = [];
+    snapshot.albums.forEach(function (item) { byId[item.id] = item; heldNames.push(item.id); });
+    var sources = albums.map(function (editor) {
+      return editor.sourceId && byId[editor.sourceId] ? byId[editor.sourceId] : null;
+    });
+    var renames = [];
+    sources.forEach(function (source, index) {
+      if (source && source.id !== names[index]) renames.push([source.id, names[index]]);
+    });
+    var plan = planRenames(heldNames, renames);
+    if (!plan) return NAME_TAKEN;
+    var held = {};
+    heldNames.forEach(function (name) { held[name] = true; });
+    plan.forEach(function (pair) { delete held[pair[0]]; held[pair[1]] = true; });
+    if (names.some(function (name, index) { return !sources[index] && held[name]; })) return NAME_TAKEN;
+    var lines = plan.map(function (pair) { return PREFIX + "arename " + pair[0] + " " + pair[1]; });
+    albums.forEach(function (editor, index) {
+      var source = sources[index];
+      var working = names[index];
+      if (!source) lines.push(PREFIX + "acreate " + working);
+      var beforePages = source ? snapshotPages(source) : 1;
+      var page;
+      if (editor.pages > beforePages) {
+        for (page = beforePages + 1; page <= editor.pages; page += 1) {
+          lines.push(PREFIX + "apage " + working + " " + page);
+        }
+      } else if (source && editor.pages < beforePages) {
+        for (page = beforePages; page > editor.pages; page -= 1) {
+          lines.push(PREFIX + "apageremove " + working + " " + page);
+        }
+      }
+      var beforeBg = source && source.background ? source.background : "default";
+      if ((editor.background || "default") !== beforeBg) {
+        lines.push(PREFIX + "abg " + working + " " + bgName(editor.background || "default"));
+      }
+      var beforeSlots = source ? slotsFromCards(source, cards) : {};
+      var maxPages = Math.max(editor.pages, beforePages);
+      var slot;
+      for (page = 1; page <= maxPages; page += 1) {
+        for (slot = 1; slot <= 8; slot += 1) {
+          var key = slotKey(page, slot);
+          var before = beforeSlots[key];
+          var after = editor.slots[key];
+          if (before && (!after || before.instanceKey !== after.instanceKey)) {
+            lines.push(PREFIX + "aremove " + working + " " + before.code);
+          }
+        }
+      }
+      for (page = 1; page <= editor.pages; page += 1) {
+        for (slot = 1; slot <= 8; slot += 1) {
+          var addKey = slotKey(page, slot);
+          var prev = beforeSlots[addKey];
+          var next = editor.slots[addKey];
+          if (next && (!prev || prev.instanceKey !== next.instanceKey)) {
+            lines.push(PREFIX + "aadd " + working + " " + next.code + " " + page + " " + slot);
+          }
+        }
+      }
+    });
+    return lines.length ? lines.join("\\n") : "# No changes to paste.";
+  }
+`
+
 export const ALBUM_CLIENT_SCRIPT = `
 (function () {
+${ALBUM_CLIENT_HELPERS}
   var boot = window.__ALBUMS__;
   if (!boot || !boot.snapshot) return;
-  var PREFIX = "k!";
   var MAX_PAGES = 100;
   var WINDOW = 48;
   var BG_ORIGIN = "https://karuta-bot.s3.us-east-2.amazonaws.com/images/backgrounds";
@@ -39,11 +185,6 @@ export const ALBUM_CLIENT_SCRIPT = `
   var refreshBtn = document.getElementById("refresh");
   var refreshNote = document.getElementById("refresh-note");
 
-  function slotKey(page, slot) { return page + ":" + slot; }
-  function normalizeName(value) { return String(value || "").trim().toLowerCase(); }
-  function isValidAlbumName(value) {
-    return value.length > 0 && value.length <= 16 && value.charAt(0) !== "_" && /^[a-zA-Z][a-zA-Z0-9\\-_]*$/.test(value);
-  }
   function bgName(key) { return names[key] || key; }
   function bgUrl(key) { return BG_ORIGIN + "/" + key + ".jpg"; }
   function backgroundKeys() {
@@ -60,31 +201,13 @@ export const ALBUM_CLIENT_SCRIPT = `
     state.albums.forEach(function (item) { add(item.background); });
     return keys;
   }
-  function portraitUrl(card) {
-    var file = encodeURIComponent(card.character) + "-" + card.edition;
-    if (card.version > 0) file = "versioned/" + file + "-" + card.version;
-    return "/images/characters/" + file + ".jpg";
-  }
-  function stars(quality) {
-    var good = Math.max(0, 4 - Number(quality || 0));
-    return "★".repeat(good) + "☆".repeat(4 - good);
-  }
-  function snapshotPages(album) {
-    return Math.max(1, Math.ceil((album.cards || []).length / 8) || 1);
-  }
   function cardMap() {
     var map = {};
     state.snapshot.cards.forEach(function (card) { map[card.instanceKey] = card; });
     return map;
   }
   function slotsFromSnapshot(album) {
-    var cards = cardMap();
-    var slots = {};
-    (album.cards || []).forEach(function (key, index) {
-      if (!key || !cards[key]) return;
-      slots[slotKey(Math.floor(index / 8) + 1, (index % 8) + 1)] = cards[key];
-    });
-    return slots;
+    return slotsFromCards(album, cardMap());
   }
   function editorsFromSnapshot(snapshot) {
     return snapshot.albums.map(function (album) {
@@ -210,70 +333,7 @@ export const ALBUM_CLIENT_SCRIPT = `
     return "ok";
   }
   function commandDiff() {
-    if (nameStatus() === "invalid") {
-      return "# Album names start with a letter and stay under 16 characters.";
-    }
-    if (nameStatus() === "taken") return "# That name is already used by another album.";
-    var byId = {};
-    state.snapshot.albums.forEach(function (item) { byId[item.id] = item; });
-    var lines = [];
-    state.albums.forEach(function (editor) {
-      var name = normalizeName(editor.name);
-      var source = editor.sourceId ? byId[editor.sourceId] : null;
-      var working = source ? source.id : name;
-      if (!source) {
-        lines.push(PREFIX + "acreate " + name);
-        working = name;
-      } else if (source.id !== name) {
-        lines.push(PREFIX + "arename " + source.id + " " + name);
-        working = name;
-      }
-      var beforePages = source ? snapshotPages(source) : 1;
-      var page;
-      if (editor.pages > beforePages) {
-        for (page = beforePages + 1; page <= editor.pages; page += 1) {
-          lines.push(PREFIX + "apage " + working + " " + page);
-        }
-      } else if (source && editor.pages < beforePages) {
-        for (page = beforePages; page > editor.pages; page -= 1) {
-          lines.push(PREFIX + "apageremove " + working + " " + page);
-        }
-      }
-      var beforeBg = source && source.background ? source.background : DEFAULT_BG;
-      if ((editor.background || DEFAULT_BG) !== beforeBg) {
-        lines.push(PREFIX + "abg " + working + " " + bgName(editor.background || DEFAULT_BG));
-      }
-      var beforeSlots = source ? slotsFromSnapshot(source) : {};
-      var maxPages = Math.max(editor.pages, beforePages);
-      var slot;
-      for (page = 1; page <= maxPages; page += 1) {
-        for (slot = 1; slot <= 8; slot += 1) {
-          var key = slotKey(page, slot);
-          var before = beforeSlots[key];
-          var after = editor.slots[key];
-          if (before && (!after || before.instanceKey !== after.instanceKey)) {
-            lines.push(PREFIX + "aremove " + working + " " + before.code);
-          }
-        }
-      }
-      for (page = 1; page <= editor.pages; page += 1) {
-        for (slot = 1; slot <= 8; slot += 1) {
-          var addKey = slotKey(page, slot);
-          var prev = beforeSlots[addKey];
-          var next = editor.slots[addKey];
-          if (next && (!prev || prev.instanceKey !== next.instanceKey)) {
-            lines.push(PREFIX + "aadd " + working + " " + next.code + " " + page + " " + slot);
-          }
-        }
-      }
-    });
-    return lines.length ? lines.join("\\n") : "# No changes to paste.";
-  }
-  function chrome(card) {
-    var dye = card.dye ? '<i class="dye" style="background:' + card.dye + '"></i>' : "";
-    return '<div class="tile"><img class="portrait" src="' + portraitUrl(card) + '" alt="" decoding="async">' +
-      '<div class="chrome"><strong>' + card.code + '</strong>#' + card.number +
-      ' · ◈' + card.edition + ' <span class="stars">' + stars(card.quality) + "</span>" + dye + "</div></div>";
+    return diffAlbums(state.snapshot, state.albums, bgName);
   }
   function closeSheets() { app.dataset.sheet = ""; }
   function openSheet(name) { app.dataset.sheet = app.dataset.sheet === name ? "" : name; }
@@ -455,7 +515,7 @@ export const ALBUM_CLIENT_SCRIPT = `
       button.type = "button";
       button.className = "bg-pick";
       if (current && current.background === key) button.classList.add("is-on");
-      button.innerHTML = "<figure><img src=\\"" + bgUrl(key) + "\\" alt=\\"\\"><figcaption>" + bgName(key) + "</figcaption></figure>";
+      button.innerHTML = "<figure><img src=\\"" + esc(bgUrl(key)) + "\\" alt=\\"\\"><figcaption>" + esc(bgName(key)) + "</figcaption></figure>";
       button.addEventListener("click", function () {
         ensureAlbum().background = key;
         render();

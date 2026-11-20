@@ -19,6 +19,7 @@ import {
   REPORT_OG_URL,
   REPORT_OG_WIDTH
 } from './report-og'
+import type { SessionViewer } from './session'
 
 export const REPORT_EMBED_TITLE = 'Karuta report form'
 export const REPORT_EMBED_DESCRIPTION =
@@ -28,11 +29,7 @@ export const REPORT_FORM_LEDE =
 export const REPORT_START_LEDE =
   'You must log in with Discord and have significant Karuta activity on your account before you can submit a report.'
 
-export type ReportViewer = {
-  discordId: string
-  username: string
-  avatar: string
-}
+export type ReportViewer = SessionViewer
 
 function viewerAvatar(viewer?: ReportViewer): string {
   if (!viewer) {
@@ -774,8 +771,13 @@ export function renderReportForbidden(message: string, viewer?: ReportViewer): s
   return headed('Access denied', `<p class="lede">${escapeHtml(message)}</p>`, { viewer })
 }
 
-export function renderReportUnavailable(viewer?: ReportViewer): string {
-  return headed('Unavailable', `<p class="lede">Report access could not be verified.</p>`, { viewer })
+export const REPORT_SAVE_FAILED_MESSAGE = 'Your report could not be saved. Try again later.'
+
+export function renderReportUnavailable(
+  viewer?: ReportViewer,
+  message = 'Report access could not be verified.'
+): string {
+  return headed('Unavailable', `<p class="lede">${escapeHtml(message)}</p>`, { viewer })
 }
 
 export function renderReportRateLimited(viewer?: ReportViewer): string {

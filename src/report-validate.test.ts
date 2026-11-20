@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   emptyReportFields,
+  fieldsFromForm,
   isDiscordSnowflake,
   isValidCardCodeSyntax,
   isValidDyeCodeSyntax,
@@ -156,5 +157,25 @@ describe('report validation', () => {
       error: true,
       message: 'Each date must be a real calendar day from Nov. 24, 2019, through today.'
     })
+  })
+
+  it('counts a browser CRLF line break as one character in notes', () => {
+    const line = 'x'.repeat(49)
+    const form = new FormData()
+    form.set('reason', 'alting')
+    form.set('user_ids', '135694375647838208')
+    form.set('acknowledged', 'on')
+    form.set('notes', Array.from({ length: 10 }, () => line).join('\r\n') + '\r\n')
+    const read = fieldsFromForm(form)
+    expect(read.notes).not.toContain('\r')
+    const parsed = parseReportFields(read)
+    expect(parsed).not.toHaveProperty('error')
+    expect(parsed).toMatchObject({ notes: Array.from({ length: 10 }, () => line).join('\n') })
+    expect((parsed as { notes: string }).notes).toHaveLength(499)
+  })
+
+  it('checks the notes limit against the trimmed text', () => {
+    const parsed = parseReportFields(fields({ notes: `  ${'x'.repeat(500)}  ` }))
+    expect(parsed).toMatchObject({ notes: 'x'.repeat(500) })
   })
 })

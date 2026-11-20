@@ -1,4 +1,4 @@
-import { REPORT_REASONS, type ReportPayload, type ReportReason } from './report-validate'
+import { isReportReason, type ReportPayload } from './report-validate'
 
 export const REPORT_RATE_LIMIT = 10
 export const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000
@@ -27,18 +27,8 @@ export async function isReportBanned(db: D1Database, discordId: string): Promise
   return Boolean(row)
 }
 
-export async function countRecentReports(
-  db: D1Database,
-  reporterId: string,
-  since: number
-): Promise<number> {
-  const row = await db
-    .prepare('SELECT COUNT(*) AS count FROM reports WHERE reporter_id = ? AND created_at >= ?')
-    .bind(reporterId, since)
-    .first<{ count: number }>()
-  return row?.count ?? 0
-}
-
+// The rate limit and the insert are one statement, so parallel posts from one
+// reporter cannot both pass a separate count and exceed the limit.
 export async function insertReport(
   db: D1Database,
   input: {
@@ -47,7 +37,7 @@ export async function insertReport(
     payload: ReportPayload
     createdAt?: number
   }
-): Promise<ReportRecord> {
+): Promise<ReportRecord | null> {
   const createdAt = input.createdAt ?? Date.now()
   const { payload } = input
   const result = await db
@@ -56,7 +46,11 @@ export async function insertReport(
          created_at, reporter_id, reporter_username, reason,
          user_ids, server_ids, channel_ids,
          card_codes, dye_codes, idol_codes, offense_dates, notes
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       )
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE (
+         SELECT COUNT(*) FROM reports WHERE reporter_id = ? AND created_at >= ?
+       ) < ?`
     )
     .bind(
       createdAt,
@@ -70,9 +64,15 @@ export async function insertReport(
       JSON.stringify(payload.dyeCodes),
       JSON.stringify(payload.idolCodes),
       JSON.stringify(payload.offenseDates),
-      payload.notes
+      payload.notes,
+      input.reporterId,
+      createdAt - REPORT_RATE_WINDOW_MS,
+      REPORT_RATE_LIMIT
     )
     .run()
+  if (result.meta.changes === 0) {
+    return null
+  }
   const id = Number(result.meta.last_row_id)
   if (!Number.isSafeInteger(id) || id < 1) {
     throw new Error('Failed to insert a report.')
@@ -130,10 +130,6 @@ function parseStringArray(raw: string): string[] | null {
   }
 }
 
-function isReportReason(value: string): value is ReportReason {
-  return (REPORT_REASONS as readonly string[]).includes(value)
-}
-
 export function recordFromRow(row: ReportRow): ReportRecord | null {
   const id = Number(row.id)
   const createdAt = Number(row.created_at)
@@ -178,6 +174,10 @@ export function recordFromRow(row: ReportRow): ReportRecord | null {
   }
 }
 
+const UNREADABLE_REPORT = 'A stored report could not be read.'
+
+// A missing row is null. A row that exists but cannot be read throws, as it
+// does in listReports, so both review routes answer it with the same 503.
 export async function getReport(db: D1Database, id: number): Promise<ReportRecord | null> {
   const row = await db
     .prepare(`${REPORT_SELECT} WHERE id = ?`)
@@ -186,7 +186,11 @@ export async function getReport(db: D1Database, id: number): Promise<ReportRecor
   if (!row) {
     return null
   }
-  return recordFromRow(row)
+  const record = recordFromRow(row)
+  if (!record) {
+    throw new Error(UNREADABLE_REPORT)
+  }
+  return record
 }
 
 export async function listReports(
@@ -201,7 +205,7 @@ export async function listReports(
   for (const row of result.results ?? []) {
     const record = recordFromRow(row)
     if (!record) {
-      throw new Error('A stored report could not be read.')
+      throw new Error(UNREADABLE_REPORT)
     }
     records.push(record)
   }

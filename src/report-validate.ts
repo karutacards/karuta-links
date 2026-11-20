@@ -102,7 +102,7 @@ export const REPORT_REASON_COPY: Record<ReportReason, { label: string; help: str
   }
 }
 
-function isReportReason(value: string): value is ReportReason {
+export function isReportReason(value: string): value is ReportReason {
   return (REPORT_REASONS as readonly string[]).includes(value)
 }
 
@@ -137,9 +137,12 @@ export function fieldsFromForm(form: FormData): ReportFields {
   }
 }
 
+// Browsers submit textarea line breaks as CRLF, while the page counts each break
+// as one character. Normalizing here keeps the server's count and the stored text
+// the same as what the reporter saw.
 function readFormString(form: FormData, key: string): string {
   const value = form.get(key)
-  return typeof value === 'string' ? value : ''
+  return typeof value === 'string' ? value.replace(/\r\n?/g, '\n') : ''
 }
 
 export function tokenize(raw: string): string[] {
@@ -276,7 +279,8 @@ export function parseReportFields(
   const offenseDates = parseOffenseDates(fields.offenseDates, fields, utcDateString(now))
   if ('error' in offenseDates) return offenseDates
 
-  if (fields.notes.length > MAX_NOTES_LENGTH) {
+  const notes = fields.notes.trim()
+  if (notes.length > MAX_NOTES_LENGTH) {
     return invalid(fields, `Notes must be ${MAX_NOTES_LENGTH.toLocaleString('en-US')} characters or fewer.`)
   }
 
@@ -293,6 +297,6 @@ export function parseReportFields(
     dyeCodes,
     idolCodes,
     offenseDates,
-    notes: fields.notes.trim()
+    notes
   }
 }
