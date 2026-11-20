@@ -19,7 +19,7 @@ function entry(partial: Partial<ReturnType<typeof parseContestEntry>> & { cardId
     contestScore: partial.score,
     contestSubmittedAt: partial.submittedAt ?? 100,
     contestImageUrl: 'https://example.test/card.png'
-  }, 4)
+  })
 }
 
 describe('contest ranking', () => {

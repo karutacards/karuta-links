@@ -1,11 +1,11 @@
 import { app } from './app'
-import { pollCardHunt, type PollEnv } from './poll'
+import { pollCardHunt } from './poll'
 
 export default {
   fetch: app.fetch,
   async scheduled(
     _controller: ScheduledController,
-    env: PollEnv,
+    env: Env,
     ctx: ExecutionContext
   ): Promise<void> {
     ctx.waitUntil(pollCardHunt(env).catch((error: unknown) => {

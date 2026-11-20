@@ -8,27 +8,27 @@ export function isSlug(value: string): boolean {
   return SLUG_PATTERN.test(value)
 }
 
-export function encodeSlug(bytes: Uint8Array): string {
-  if (bytes.length < SLUG_LENGTH) {
-    throw new Error('Need at least 6 random bytes to encode a slug')
-  }
+// 252 is the largest multiple of 36 below 256. Bytes at or above it are skipped, so
+// every character is equally likely.
+const UNBIASED_LIMIT = 256 - (256 % ALPHABET.length)
+
+// Builds a slug from random bytes, or returns null when too few usable bytes remain.
+export function encodeSlug(bytes: Uint8Array): string | null {
   let slug = ''
-  for (let i = 0; i < SLUG_LENGTH; i += 1) {
-    const byte = bytes[i]
-    if (byte === undefined) {
-      throw new Error('Need at least 6 random bytes to encode a slug')
-    }
+  for (const byte of bytes) {
+    if (byte >= UNBIASED_LIMIT) continue
     slug += ALPHABET[byte % ALPHABET.length]
+    if (slug.length === SLUG_LENGTH) return slug
   }
-  return slug
+  return null
 }
 
 export function generateSlug(
-  randomBytes: () => Uint8Array = () => crypto.getRandomValues(new Uint8Array(SLUG_LENGTH))
+  randomBytes: () => Uint8Array = () => crypto.getRandomValues(new Uint8Array(SLUG_LENGTH * 2))
 ): string {
   for (let attempt = 0; attempt < 16; attempt += 1) {
     const slug = encodeSlug(randomBytes())
-    if (!isReservedSlug(slug)) {
+    if (slug && !isReservedSlug(slug)) {
       return slug
     }
   }

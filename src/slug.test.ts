@@ -15,6 +15,11 @@ describe('slugs', () => {
     expect(encodeSlug(Uint8Array.from([0, 0, 0, 0, 0, 0]))).toBe('aaaaaa')
   })
 
+  it('skips bytes that would bias the alphabet', () => {
+    expect(encodeSlug(Uint8Array.from([255, 252, 0, 1, 2, 3, 4, 5]))).toBe('abcdef')
+    expect(encodeSlug(Uint8Array.from([0, 1, 2, 3, 4, 255]))).toBeNull()
+  })
+
   it('retries when a reserved six-letter word is generated', () => {
     const reserved = Uint8Array.from([18, 19, 0, 19, 8, 2])
     const safe = Uint8Array.from([1, 2, 3, 4, 5, 6])

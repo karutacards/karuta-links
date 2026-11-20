@@ -56,20 +56,6 @@ export type ContentSnapshot = {
   newCharacterAliases: CharacterAliasRecord[]
 }
 
-export type DocumentRow = {
-  section: string
-  id: number
-  created_at: number
-  kind: string
-  payload: string
-}
-
-export type SlugRow = {
-  slug: string
-  section: string
-  id: number
-}
-
 export type ContestWinner = {
   place: number
   userId: string
@@ -119,27 +105,3 @@ export type ListedContest = {
   slug: string | null
   snapshot: ContestSnapshot
 }
-
-export type IngestResult = {
-  section: string
-  id: number
-  slug: string
-  path: string
-  shortPath: string
-  url: string
-  shortUrl: string
-}
-
-export type Route =
-  | { type: 'home' }
-  | { type: 'health' }
-  | { type: 'robots' }
-  | { type: 'ingest' }
-  | { type: 'contestHome' }
-  | { type: 'draftImport' }
-  | { type: 'report' }
-  | { type: 'albums' }
-  | { type: 'draft'; id: number }
-  | { type: 'document'; section: string; id: number }
-  | { type: 'slug'; slug: string }
-  | { type: 'notFound' }

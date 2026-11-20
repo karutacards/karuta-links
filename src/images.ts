@@ -1,7 +1,7 @@
 export const UNCACHED_CDN = 'https://d29rfjkp84y49u.cloudfront.net'
 export const CONTEST_IMAGE_CACHE_CONTROL = 'public, max-age=31536000, s-maxage=31536000, immutable'
 
-const ORIGIN_KEY = /^(cards|thumbs)\/(?:versioned\/)?[^./][^/]*\.jpg$/
+const ORIGIN_KEY = /^cards\/(?:versioned\/)?[^./][^/]*\.jpg$/
 const CHARACTER_PUBLIC = /^characters\/(?:versioned\/)?[^./][^/]*\.jpg$/
 const CONTEST_KEY = /^contests\/card\/[1-9][0-9]*\/(?:[1-9][0-9]*|ref)$/
 
@@ -49,10 +49,6 @@ export function originKeyFromImagePath(path: string): string | null {
   return null
 }
 
-export function isKeyedObjectPath(path: string): boolean {
-  return CHARACTER_PUBLIC.test(path) || ORIGIN_KEY.test(path)
-}
-
 export function isContestObjectPath(path: string): boolean {
   return CONTEST_KEY.test(path) && !path.includes('..')
 }
@@ -69,9 +65,8 @@ export async function ensureKeyedFull(
   const response = await fetch(originImageUrl(key, edition, version), {
     headers: { accept: 'image/jpeg' }
   })
-  if (response.status === 403 || response.status === 404) return false
   if (!response.ok) return false
-  await bucket.put(objectKey, response.body, {
+  await bucket.put(objectKey, await response.arrayBuffer(), {
     httpMetadata: {
       contentType: 'image/jpeg',
       cacheControl: 'public, max-age=31536000, immutable'
@@ -118,9 +113,10 @@ export async function copyContestImage(
   const existing = await bucket.head(objectKey)
   if (existing) return true
   const response = await fetch(sourceUrl, { headers: { accept: 'image/*' } })
-  if (!response.ok || !response.body) return false
+  if (!response.ok) return false
   const contentType = response.headers.get('content-type') || 'image/jpeg'
-  await bucket.put(objectKey, response.body, {
+  // Buffer the body: R2 refuses a stream of unknown length, such as a chunked response.
+  await bucket.put(objectKey, await response.arrayBuffer(), {
     httpMetadata: {
       contentType,
       cacheControl: CONTEST_IMAGE_CACHE_CONTROL
@@ -129,13 +125,19 @@ export async function copyContestImage(
   return true
 }
 
+function contestCacheUrl(requestUrl: string): string {
+  const url = new URL(requestUrl)
+  return `${url.origin}${url.pathname}`
+}
+
 async function serveContestImage(
   bucket: R2Bucket,
   objectKey: string,
   requestUrl?: string
 ): Promise<Response> {
   const cache = caches.default
-  const cacheKey = requestUrl ? new Request(requestUrl, { method: 'GET' }) : null
+  // Key the cache on the path alone, so query strings can't create extra entries.
+  const cacheKey = requestUrl ? new Request(contestCacheUrl(requestUrl), { method: 'GET' }) : null
   if (cacheKey) {
     const hit = await cache.match(cacheKey)
     if (hit) {
@@ -184,10 +186,10 @@ export async function serveKeyedImage(
   if (!object) {
     const origin = `${UNCACHED_CDN}/${originKey}`
     const response = await fetch(origin, { headers: { accept: 'image/jpeg' } })
-    if (!response.ok || !response.body) {
+    if (!response.ok) {
       return new Response('Not found', { status: 404 })
     }
-    await bucket.put(originKey, response.body, {
+    await bucket.put(originKey, await response.arrayBuffer(), {
       httpMetadata: {
         contentType: 'image/jpeg',
         cacheControl: 'public, max-age=31536000, immutable'

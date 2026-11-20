@@ -28,109 +28,84 @@ export async function allocateId(db: D1Database, section: string): Promise<numbe
   return row.next_id
 }
 
+const SLUG_ATTEMPTS = 8
+
+// Writes a document, its short link and any extra statements in one D1 transaction.
+// A slug collision retries with a new slug. Any other unique-constraint failure is
+// returned as 'duplicate' so the caller can decide what it means.
+async function insertDocument(
+  db: D1Database,
+  section: string,
+  id: number,
+  kind: string,
+  payload: string,
+  createdAt: number,
+  before: D1PreparedStatement[] = []
+): Promise<{ id: number; slug: string } | 'duplicate'> {
+  for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt += 1) {
+    const slug = generateSlug()
+    try {
+      await db.batch([
+        ...before,
+        db.prepare(
+          `INSERT INTO documents (section, id, created_at, kind, payload)
+           VALUES (?, ?, ?, ?, ?)`
+        ).bind(section, id, createdAt, kind, payload),
+        db.prepare(
+          `INSERT INTO slugs (slug, section, id) VALUES (?, ?, ?)`
+        ).bind(slug, section, id)
+      ])
+      return { id, slug }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/UNIQUE/i.test(message)) {
+        throw error
+      }
+      if (!/slugs\.slug/i.test(message)) {
+        return 'duplicate'
+      }
+    }
+  }
+
+  throw new Error('Failed to allocate a unique slug')
+}
+
 export async function insertContentDump(
   db: D1Database,
   snapshot: ContentSnapshot,
   createdAt = Date.now()
 ): Promise<{ id: number; slug: string }> {
   const id = await allocateId(db, CONTENT_SECTION)
-  const payload = JSON.stringify(snapshot)
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const slug = generateSlug()
-    try {
-      await db.batch([
-        db.prepare(
-          `INSERT INTO documents (section, id, created_at, kind, payload)
-           VALUES (?, ?, ?, ?, ?)`
-        ).bind(CONTENT_SECTION, id, createdAt, CONTENT_KIND, payload),
-        db.prepare(
-          `INSERT INTO slugs (slug, section, id) VALUES (?, ?, ?)`
-        ).bind(slug, CONTENT_SECTION, id)
-      ])
-      return { id, slug }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!/UNIQUE/i.test(message) || attempt === 7) {
-        throw error
-      }
-    }
+  const result = await insertDocument(
+    db, CONTENT_SECTION, id, CONTENT_KIND, JSON.stringify(snapshot), createdAt
+  )
+  if (result === 'duplicate') {
+    throw new Error(`Content document ${id} already exists`)
   }
-
-  throw new Error('Failed to allocate a unique slug')
+  return result
 }
 
-export async function claimContestEvent(
-  db: D1Database,
-  eventCounter: number,
-  contestName = CARD_HUNT_NAME
-): Promise<boolean> {
-  if (!Number.isSafeInteger(eventCounter) || eventCounter < 1) {
-    return false
-  }
-  try {
-    await db
-      .prepare(
-        `INSERT INTO contest_dumps (contest_name, event_counter, document_id)
-         VALUES (?, ?, ?)`
-      )
-      .bind(contestName, eventCounter, eventCounter)
-      .run()
-    return true
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    if (/UNIQUE/i.test(message)) {
-      return false
-    }
-    throw error
-  }
-}
-
+// Claims the Card Hunt event and writes its page in one transaction, so a failed
+// write never leaves a claim behind that would hide the event from later polls.
+// Returns null when the event was already claimed or written.
 export async function insertContestDump(
   db: D1Database,
   snapshot: ContestSnapshot,
-  createdAt = Date.now()
+  createdAt = Date.now(),
+  contestName = CARD_HUNT_NAME
 ): Promise<{ id: number; slug: string } | null> {
   const id = snapshot.eventCounter
   if (!Number.isSafeInteger(id) || id < 1) {
     return null
   }
-  const existing = await db
-    .prepare(
-      `SELECT id FROM documents WHERE section = ? AND id = ?`
-    )
-    .bind(CONTEST_SECTION, id)
-    .first<{ id: number }>()
-  if (existing) {
-    return null
-  }
-  const payload = JSON.stringify(snapshot)
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const slug = generateSlug()
-    try {
-      await db.batch([
-        db.prepare(
-          `INSERT INTO documents (section, id, created_at, kind, payload)
-           VALUES (?, ?, ?, ?, ?)`
-        ).bind(CONTEST_SECTION, id, createdAt, CONTEST_KIND, payload),
-        db.prepare(
-          `INSERT INTO slugs (slug, section, id) VALUES (?, ?, ?)`
-        ).bind(slug, CONTEST_SECTION, id)
-      ])
-      return { id, slug }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (/UNIQUE/i.test(message) && /contest_dumps|documents/i.test(message)) {
-        return null
-      }
-      if (!/UNIQUE/i.test(message) || attempt === 7) {
-        throw error
-      }
-    }
-  }
-
-  throw new Error('Failed to allocate a unique slug')
+  const claim = db.prepare(
+    `INSERT INTO contest_dumps (contest_name, event_counter, document_id)
+     VALUES (?, ?, ?)`
+  ).bind(contestName, id, id)
+  const result = await insertDocument(
+    db, CONTEST_SECTION, id, CONTEST_KIND, JSON.stringify(snapshot), createdAt, [claim]
+  )
+  return result === 'duplicate' ? null : result
 }
 
 export async function lastDumpedEvent(
