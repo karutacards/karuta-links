@@ -1982,7 +1982,7 @@ window.krtaDraftImport = function () {
   function forgetCatalog() {
     try { sessionStorage.removeItem(storageKey); } catch (error) { /* storage is optional */ }
   }
-  // The catalog is kept only so that signing in again can finish the import. Any answer
+  // The catalog is kept only so that signing in again can finish the import. Any outcome
   // other than a missing sign-in forgets it, so a reload never posts the same catalog twice.
   async function submit(catalog) {
     if (busy || created) return;
@@ -1995,8 +1995,11 @@ window.krtaDraftImport = function () {
         body: JSON.stringify(catalog)
       });
     } catch (error) {
+      // The server may have created the draft before the connection dropped, so a
+      // reload must not post this catalog again.
       busy = false;
-      showStatus(status, 'The draft could not be created.', true);
+      forgetCatalog();
+      showStatus(status, 'The draft could not be created. Run the importer again.', true);
       return;
     }
     busy = false;

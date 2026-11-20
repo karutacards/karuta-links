@@ -29,9 +29,11 @@ export function firestoreSource(env: Env): ContestSource | null {
   }
 }
 
-// Missing framed-card copies on the newest contest are retried for this long after it
-// was written. After that a copy that still fails is assumed to be gone at the source.
+// Missing framed-card copies on the newest contest are retried every ten minutes for a
+// day after it was written. After that a copy that still fails is assumed to be gone at
+// the source.
 export const IMAGE_REPAIR_WINDOW_MS = 24 * 60 * 60 * 1000
+export const IMAGE_REPAIR_INTERVAL_MS = 10 * 60 * 1000
 
 export async function pollCardHunt(
   env: Env,
@@ -62,6 +64,10 @@ export async function pollCardHunt(
 }
 
 async function repairLatestContestImages(env: Env, now: number): Promise<void> {
+  // The cron runs once a minute, so this fires on one poll in each ten-minute slot.
+  if (now % IMAGE_REPAIR_INTERVAL_MS >= 60_000) {
+    return
+  }
   const latest = (await listRecentContests(env.DB, 1))[0]
   if (!latest || now - latest.createdAt > IMAGE_REPAIR_WINDOW_MS) {
     return

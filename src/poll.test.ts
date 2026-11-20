@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ContestSource } from './contest'
 import { getContestDocument, lastDumpedEvent } from './db'
-import { IMAGE_REPAIR_WINDOW_MS, pollCardHunt } from './poll'
+import { IMAGE_REPAIR_INTERVAL_MS, IMAGE_REPAIR_WINDOW_MS, pollCardHunt } from './poll'
 import { sqliteD1 } from './sqlite-d1.testing'
 
 function memoryBucket(): { bucket: R2Bucket; keys: Set<string> } {
@@ -70,7 +70,7 @@ describe('Card Hunt poll', () => {
     expect(await pollCardHunt(env(db, bucket), source())).toBe('created')
   })
 
-  it('retries a failed image copy on the newest contest for a day', async () => {
+  it('retries a failed image copy on the newest contest every ten minutes for a day', async () => {
     const { db } = sqliteD1()
     const { bucket, keys } = memoryBucket()
     vi.stubGlobal('fetch', async () => new Response('down', { status: 503 }))
@@ -79,9 +79,14 @@ describe('Card Hunt poll', () => {
     expect(keys.size).toBe(0)
 
     vi.stubGlobal('fetch', async () => new Response('jpeg'))
-    await pollCardHunt(env(db, bucket), source(), Date.now() + IMAGE_REPAIR_WINDOW_MS + 1)
+    const slot = (time: number) => time - (time % IMAGE_REPAIR_INTERVAL_MS)
+    const later = slot(Date.now() + IMAGE_REPAIR_WINDOW_MS + IMAGE_REPAIR_INTERVAL_MS)
+    await pollCardHunt(env(db, bucket), source(), later)
     expect(keys.size).toBe(0)
-    await pollCardHunt(env(db, bucket), source())
+    const nextSlot = slot(Date.now()) + IMAGE_REPAIR_INTERVAL_MS
+    await pollCardHunt(env(db, bucket), source(), nextSlot + 60_000)
+    expect(keys.size).toBe(0)
+    await pollCardHunt(env(db, bucket), source(), nextSlot)
     expect([...keys]).toContain('contests/card/7/1')
   })
 })

@@ -305,7 +305,7 @@ describe('draft migrations', () => {
     expect(await allocateId(db, DRAFT_SAVES_SECTION)).toBe(91)
   })
 
-  it('brings stored access overrides in line with the access rules', () => {
+  it('brings stored access overrides in line without changing who can open a draft', () => {
     const { sqlite } = sqliteD1()
     const migration = readFileSync(join(MIGRATIONS, '0017_draft_access_override_rules.sql'), 'utf8')
     const insert = sqlite.prepare(
@@ -318,6 +318,7 @@ describe('draft migrations', () => {
     }))
     insert.run(2, JSON.stringify({ credentials: { minDrops: 0 } }))
     insert.run(3, JSON.stringify({ access: 'open', credentials: { minGrabs: 2.5 } }))
+    insert.run(4, JSON.stringify({ access: 'credentials', credentials: { minDrops: 1500.5 } }))
     sqlite.exec(migration)
     const stored = (sqlite.prepare(`SELECT id, access_config FROM drafts ORDER BY id`).all() as {
       id: number
@@ -325,8 +326,9 @@ describe('draft migrations', () => {
     }[]).map((row) => (row.access_config ? JSON.parse(row.access_config) : null))
     expect(stored).toEqual([
       { access: 'whitelist', whitelist: ['111111111111111111'], credentials: { minGrabs: 20 } },
-      null,
-      { access: 'open' }
+      { access: 'open' },
+      { access: 'open', credentials: { minGrabs: 3 } },
+      { access: 'credentials', credentials: { minDrops: 1501 } }
     ])
   })
 })

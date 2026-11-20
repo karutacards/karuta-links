@@ -9,6 +9,7 @@ import { registerAlbums } from './albums'
 import { registerDrafts } from './drafts'
 import { registerOAuth } from './oauth'
 import { registerReports } from './report'
+import { readLimitedText } from './request-body'
 import { parsePositiveInt, isShortLinkSegment } from './routing'
 import { CONTENT_SECTION } from './types'
 
@@ -66,19 +67,15 @@ app.post('/api/v1/content', async (c) => {
     return json({ error: 'Unauthorized' }, 401)
   }
 
-  const lengthHeader = c.req.header('content-length')
-  if (lengthHeader && Number(lengthHeader) > MAX_INGEST_BYTES) {
-    return json({ error: 'Payload too large' }, 413)
-  }
-  // A chunked request has no Content-Length, so check the bytes that actually arrived.
-  const raw = await c.req.arrayBuffer()
-  if (raw.byteLength > MAX_INGEST_BYTES) {
+  // Stops reading at the limit, whether or not the client sent a Content-Length.
+  const raw = await readLimitedText(c.req.raw, MAX_INGEST_BYTES)
+  if (raw === null) {
     return json({ error: 'Payload too large' }, 413)
   }
 
   let body: unknown
   try {
-    body = JSON.parse(new TextDecoder().decode(raw))
+    body = JSON.parse(raw)
   } catch {
     return json({ error: 'Body must be JSON' }, 400)
   }
