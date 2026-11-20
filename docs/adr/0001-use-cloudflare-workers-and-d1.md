@@ -18,3 +18,7 @@ Ship one Worker named `karuta-links` with a D1 database of the same name. Render
 ## Consequences
 
 Local and production use Wrangler. Custom domain attachment is a later DNS step. Admin integration posts into this Worker rather than writing D1 itself.
+
+## Amendment, September 17, 2026
+
+The shared-data pass replaced "keep card art on the official Karuta CDN." Dump pages now point at same-origin `/images/` paths that the Worker serves from the shared private R2 bucket `karuta-images`, and a miss is fetched once from Karuta's uncached host and kept. SPEC.md describes the current image rules. The custom domain `krta.cc` has since been attached.

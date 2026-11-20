@@ -6,7 +6,7 @@ The product needs durable dump URLs and short links that fit in Discord. A gener
 
 ## Decision
 
-Two or more segments are a document: `/{section}/{id}`. One unreserved six-character segment is a slug that 302s to that document. Slugs may only target internal section paths. Reserved first segments never become slugs. IDs increment per section.
+Two or more segments are a document: `/{section}/{id}`. One unreserved six-character segment is a slug that 302s to that document. Slugs may only target internal section paths. Reserved first segments never become slugs. Content IDs increment per section. Contest pages use the Card Hunt's own event number as their ID.
 
 ## Alternatives considered
 
