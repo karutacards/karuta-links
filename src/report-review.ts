@@ -6,21 +6,10 @@ import {
   REPORT_LIST_DEFAULT,
   REPORT_LIST_MAX
 } from './report-store'
+import { json } from './responses'
 
 export const REPORT_REVIEW_LIMIT = 60
 export const REPORT_REVIEW_PERIOD_SEC = 10
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY'
-    }
-  })
-}
 
 function parseId(raw: string): number | null {
   if (!/^[1-9][0-9]*$/.test(raw)) {

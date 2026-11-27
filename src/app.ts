@@ -10,6 +10,7 @@ import { registerDrafts } from './drafts'
 import { registerOAuth } from './oauth'
 import { registerReports } from './report'
 import { readLimitedText } from './request-body'
+import { html, json } from './responses'
 import { parsePositiveInt, isShortLinkSegment } from './routing'
 import { CONTENT_SECTION } from './types'
 
@@ -19,30 +20,6 @@ registerOAuth(app)
 registerDrafts(app)
 registerReports(app)
 registerAlbums(app)
-
-function html(body: string, status = 200): Response {
-  return new Response(body, {
-    status,
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY'
-    }
-  })
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY'
-    }
-  })
-}
 
 function absoluteUrl(request: Request, path: string): string {
   return new URL(path, request.url).toString()

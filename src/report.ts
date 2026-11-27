@@ -19,23 +19,11 @@ import {
 import { registerReportReview } from './report-review'
 import { insertReport } from './report-store'
 import { fieldsFromForm, parseReportFields } from './report-validate'
+import { html, SECURITY_HEADERS } from './responses'
 import { getSession, viewerOf, type Session } from './session'
 
 export const REPORT_SENT_PATH = '/report?sent=1'
 export const REPORT_FORM_UNREADABLE_MESSAGE = 'The form could not be read. Please try again.'
-
-const SECURITY_HEADERS = {
-  'x-content-type-options': 'nosniff',
-  'referrer-policy': 'no-referrer',
-  'x-frame-options': 'DENY'
-}
-
-function html(body: string, status = 200): Response {
-  return new Response(body, {
-    status,
-    headers: { 'content-type': 'text/html; charset=utf-8', ...SECURITY_HEADERS }
-  })
-}
 
 function accessHtml(decision: AccessDenied, session: Session): Response {
   const viewer = viewerOf(session)

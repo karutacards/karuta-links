@@ -3,6 +3,7 @@ import { draftIdentityForEnv } from './draft-access'
 import { renderDraftForbidden, renderDraftUnavailable } from './draft-html'
 import { REPORT_ACCESS_DENIED_MESSAGE } from './report-access'
 import { renderReportForbidden, renderReportUnavailable } from './report-html'
+import { json, SECURITY_HEADERS } from './responses'
 import {
   clearNextCookie,
   clearSessionCookie,
@@ -54,19 +55,6 @@ export function callbackRedirectUri(url: URL): string | null {
     return LOCAL_CALLBACK
   }
   return null
-}
-
-function json(body: unknown, status = 200, headers?: HeadersInit): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY',
-      ...headers
-    }
-  })
 }
 
 function redirect(location: string, cookies: string[]): Response {
@@ -204,9 +192,7 @@ export function registerOAuth(app: Hono<{ Bindings: Env }>): void {
     if (!decision.ok) {
       const headers = new Headers({
         'content-type': 'text/html; charset=utf-8',
-        'x-content-type-options': 'nosniff',
-        'referrer-policy': 'no-referrer',
-        'x-frame-options': 'DENY'
+        ...SECURITY_HEADERS
       })
       headers.append('Set-Cookie', clearStateCookie(https))
       headers.append('Set-Cookie', clearNextCookie(https))

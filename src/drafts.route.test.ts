@@ -25,6 +25,12 @@ afterEach(() => {
   resetBlacklistCache()
 })
 
+function expectSecurityHeaders(response: Response): void {
+  expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+  expect(response.headers.get('x-frame-options')).toBe('DENY')
+}
+
 describe('draft routes', () => {
   it('starts OAuth and keeps a draft return path', async () => {
     const response = await app.request('http://127.0.0.1:8787/drafts/3', {}, testEnv())
@@ -65,6 +71,8 @@ describe('draft routes', () => {
       testEnv()
     )
     expect(response.status).toBe(503)
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expectSecurityHeaders(response)
     expect(await response.text()).toContain('Draft access could not be verified.')
   })
 
@@ -97,6 +105,8 @@ describe('draft routes', () => {
       testEnv()
     )
     expect(response.status).toBe(503)
+    expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8')
+    expectSecurityHeaders(response)
     expect(await response.json()).toMatchObject({ code: 'UNAVAILABLE' })
   })
 
@@ -125,6 +135,7 @@ describe('draft routes', () => {
     )
     expect(response.status).toBe(429)
     expect(response.headers.get('retry-after')).toBe('10')
+    expectSecurityHeaders(response)
     expect(await response.json()).toMatchObject({
       code: 'RATE_LIMITED',
       error: 'Too many draft actions. Wait a few seconds.'

@@ -49,6 +49,7 @@ import { formatApDate } from './html'
 import { oauthConfigured } from './oauth'
 import { getSession, type Session } from './session'
 import { readLimitedText } from './request-body'
+import { html, json, SECURITY_HEADERS } from './responses'
 
 const MAX_DRAFT_BYTES = 1_000_000
 
@@ -57,31 +58,6 @@ export type DraftGate = (
   discordId: string,
   config: DraftsConfig
 ) => Promise<AccessDecision>
-
-function html(body: string, status = 200): Response {
-  return new Response(body, {
-    status,
-    headers: {
-      'content-type': 'text/html; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY'
-    }
-  })
-}
-
-function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'x-content-type-options': 'nosniff',
-      'referrer-policy': 'no-referrer',
-      'x-frame-options': 'DENY',
-      ...extra
-    }
-  })
-}
 
 function draftErrorResponse(error: DraftError): Response {
   const extra: Record<string, string> = {}
@@ -774,9 +750,7 @@ export function registerDrafts(
       headers: {
         'content-type': 'text/plain; charset=utf-8',
         'content-disposition': `attachment; filename="draft-${draft.id}.txt"`,
-        'x-content-type-options': 'nosniff',
-        'referrer-policy': 'no-referrer',
-        'x-frame-options': 'DENY'
+        ...SECURITY_HEADERS
       }
     })
   })
