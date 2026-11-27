@@ -1,5 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/CRASNY/eng-standards/main/layout/project.schema.json",
   "name": "krtacc",
-  "remote": "required"
+  "remote": "required",
+  "secrets": {
+    "manager": "sops",
+    "source": "secrets.sops.env",
+    "run": "sops exec-env secrets.sops.env 'pnpm run deploy' (Wrangler then acts in the shared Karuta Cloudflare account). The Worker's own secrets are set with wrangler secret put, as docs/runbooks/deploy.md says."
+  }
 }

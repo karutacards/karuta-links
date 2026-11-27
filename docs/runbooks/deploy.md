@@ -1,12 +1,18 @@
 # Deploy
 
-Last updated: November 20, 2026.
+Last updated: November 27, 2026.
 
 Production names are `karuta-links` for the Worker and the D1 database. `wrangler.jsonc` must keep `"name": "karuta-links"`. There is no CI and no automatic deploy, so every release runs from a developer machine with Wrangler.
 
+## Cloudflare sign-in
+
+The Worker and its database live in the shared Karuta Cloudflare account, which is not the account Wrangler's browser sign-in uses on every machine. `secrets.sops.env` therefore holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for that account, and Wrangler uses them ahead of any stored sign-in. Run each Wrangler command below through SOPS, for example `sops exec-env secrets.sops.env 'pnpm run deploy'`. On Windows, `exec-env` splits its command on spaces without a shell, so put anything more complex in a script.
+
+The token is named "Wrangler deploy (05Z)" in the Karuta account. It was made from the "Edit Cloudflare Workers" template with D1 edit added. Change its value with `sops secrets.sops.env`, and never decrypt the file to the screen.
+
 ## First-time remote setup
 
-1. Confirm Wrangler is logged into the shared Karuta Cloudflare account: `pnpm exec wrangler whoami`.
+1. Confirm Wrangler reaches the shared Karuta Cloudflare account: `sops exec-env secrets.sops.env 'pnpm exec wrangler whoami'`.
 2. Create D1: `pnpm exec wrangler d1 create karuta-links`.
 3. Put the returned `database_id` into `wrangler.jsonc`.
 4. Apply every migration: `pnpm run db:migrate:remote`.
