@@ -20,10 +20,6 @@ export const DRAFT_FONT_CODE_POINTS: readonly number[] = [
 
 const FONT_GLYPHS = new Set(DRAFT_FONT_CODE_POINTS.map((code) => String.fromCodePoint(code)))
 
-export function isDraftFontGlyph(character: string): boolean {
-  return FONT_GLYPHS.has(character)
-}
-
 export type DraftTextKind = 'name' | 'alias' | 'description'
 
 function draftTextError(kind: DraftTextKind, angle: boolean, spaces: boolean): string {

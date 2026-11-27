@@ -127,11 +127,6 @@ export type DraftEventsSnapshot = {
   description: string
 }
 
-export type DraftConflict = {
-  code: 'CONFLICT' | 'ENTITY_GONE' | 'LOCKED'
-  entity: DraftEntity | null
-}
-
 export class DraftError extends Error {
   readonly status: number
   readonly code: string
