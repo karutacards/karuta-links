@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { renderReportStart } from './report-html'
 import {
@@ -27,5 +29,10 @@ describe('report og thumbnail', () => {
     expect(String.fromCharCode(...REPORT_OG_BYTES.slice(0, 4))).toBe('RIFF')
     expect(String.fromCharCode(...REPORT_OG_BYTES.slice(8, 12))).toBe('WEBP')
     expect(REPORT_OG_BYTES.byteLength).toBeLessThan(90_000)
+  })
+
+  it('embeds the 256-pixel WebP kept in docs/report-og', () => {
+    const source = readFileSync(join(import.meta.dirname, '..', 'docs', 'report-og', 'cop-hat-badge-256.webp'))
+    expect(Buffer.from(REPORT_OG_BYTES).equals(source)).toBe(true)
   })
 })
