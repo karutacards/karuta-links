@@ -73,6 +73,9 @@ export type DraftRecord = {
   characters: DraftCharacter[]
 }
 
+// The draft row alone, without its entities. Routes that only check access read this.
+export type DraftSummary = Omit<DraftRecord, 'series' | 'characters'>
+
 export type DraftAuditRow = {
   id: number
   entityType: DraftAuditSubject

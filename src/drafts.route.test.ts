@@ -206,4 +206,41 @@ describe('draft routes over SQLite', () => {
       series: [{ name: 'Naruto Shippuden', revision: 4 }]
     })
   })
+
+  it('polls events without reading the draft entities', async () => {
+    const { drafts, db, adminId, env, cookie } = await openDraftsApp()
+    const draft = await createDraft(db, { series: [{ name: 'Naruto' }] }, adminId, 'admin', 10)
+    const statements: string[] = []
+    const recorded = testEnv({
+      ...env,
+      DB: {
+        ...db,
+        prepare(sql: string) {
+          statements.push(sql)
+          return db.prepare(sql)
+        }
+      } as unknown as D1Database
+    })
+    const get = (path: string) => drafts.request(`http://127.0.0.1:8787${path}`, {
+      headers: { Cookie: cookie }
+    }, recorded)
+    const first = await get(`/api/v1/drafts/${draft.id}/events?after=0`)
+    expect(first.status).toBe(200)
+    const { after } = await first.json() as { after: number }
+    statements.length = 0
+    const poll = await get(`/api/v1/drafts/${draft.id}/events?after=${after}`)
+    expect(poll.status).toBe(200)
+    expect(await poll.json()).toMatchObject({ events: [], series: [], characters: [] })
+    expect(statements.length).toBeGreaterThan(0)
+    expect(statements.filter((sql) => /draft_entities|GROUP BY/.test(sql))).toEqual([])
+
+    const full = await get(`/api/v1/drafts/${draft.id}`)
+    expect(full.status).toBe(200)
+    expect(await full.json()).toMatchObject({
+      id: draft.id,
+      canAdmin: true,
+      series: [{ name: 'Naruto' }],
+      characters: []
+    })
+  })
 })

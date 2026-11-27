@@ -29,7 +29,8 @@ import {
   type DraftRecord,
   type DraftReview,
   type DraftReviewDecision,
-  type DraftSeries
+  type DraftSeries,
+  type DraftSummary
 } from './draft-types'
 
 export const PRESENCE_STALE_MS = 10_000
@@ -446,9 +447,26 @@ export async function createDraft(
   return created
 }
 
-export async function getDraft(db: D1Database, id: number): Promise<DraftRecord | null> {
+export async function getDraftSummary(db: D1Database, id: number): Promise<DraftSummary | null> {
   const row = await getDraftRow(db, id)
   if (!row) {
+    return null
+  }
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lockedAt: row.locked_at,
+    lockedBy: row.locked_by,
+    hiddenAt: row.hidden_at ?? null,
+    accessOverride: parseStoredAccessOverride(row.access_config),
+    description: row.description ?? ''
+  }
+}
+
+export async function getDraft(db: D1Database, id: number): Promise<DraftRecord | null> {
+  const summary = await getDraftSummary(db, id)
+  if (!summary) {
     return null
   }
   const result = await db.prepare(
@@ -471,18 +489,7 @@ export async function getDraft(db: D1Database, id: number): Promise<DraftRecord 
   }
   series.splice(0, series.length, ...sortDraftEntities(series, 'added'))
   characters.splice(0, characters.length, ...sortDraftEntities(characters, 'added'))
-  return {
-    id: row.id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lockedAt: row.locked_at,
-    lockedBy: row.locked_by,
-    hiddenAt: row.hidden_at ?? null,
-    accessOverride: parseStoredAccessOverride(row.access_config),
-    description: row.description ?? '',
-    series,
-    characters
-  }
+  return { ...summary, series, characters }
 }
 
 export async function listEntityAudit(

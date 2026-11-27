@@ -20,6 +20,7 @@ import { type DraftMutation } from './draft-mutation'
 import {
   createDraft,
   getDraft,
+  getDraftSummary,
   hideDraft,
   setDraftAccessConfig,
   listDraftReviews,
@@ -34,7 +35,7 @@ import {
   unlockDraft
 } from './draft-store'
 import { DRAFT_WRITE_PERIOD_SEC, limitDraftWrite } from './draft-rate'
-import { DraftError, type DraftEntityType, type DraftRecord } from './draft-types'
+import { DraftError, type DraftEntityType, type DraftRecord, type DraftSummary } from './draft-types'
 import {
   canAdminDrafts,
   draftHiddenFromViewer,
@@ -222,7 +223,7 @@ function requireDraftApiIdentity(
 async function authorizeDraft(
   env: Env,
   discordId: string,
-  draft: DraftRecord,
+  draft: DraftSummary,
   asHtml: boolean,
   gate: DraftGate
 ): Promise<DraftsConfig | Response> {
@@ -244,18 +245,21 @@ function missingDraft(asHtml: boolean): Response {
   return json({ error: 'That draft does not exist.', code: 'NOT_FOUND' }, 404)
 }
 
-async function requireVisibleDraft(
+// Reads the draft with `load`: the row alone for access checks, or with its entities
+// for the routes that show or export them.
+async function requireVisibleDraft<T extends DraftSummary>(
   db: D1Database,
   id: number | null,
   discordId: string,
+  load: (db: D1Database, id: number) => Promise<T | null>,
   asHtml = false
-): Promise<DraftRecord | Response> {
+): Promise<T | Response> {
   if (id === null) {
     return missingDraft(asHtml)
   }
-  let draft: DraftRecord
+  let draft: T
   try {
-    const found = await getDraft(db, id)
+    const found = await load(db, id)
     if (!found || draftHiddenFromViewer(found.hiddenAt, discordId)) {
       return missingDraft(asHtml)
     }
@@ -305,12 +309,13 @@ export function registerDrafts(
 
   // The front of every API route that names a draft: sign-in and identity, the write
   // rate limit, the admin check, then the draft's visibility and its access rules.
+  // It reads only the draft row; a route that needs the entities calls withEntities.
   async function openDraft(
     request: Request,
     env: Env,
     rawId: string,
     route: DraftRouteOptions = {}
-  ): Promise<{ session: Session; draft: DraftRecord } | Response> {
+  ): Promise<{ session: Session; draft: DraftSummary } | Response> {
     const auth = await requireDraftApiIdentity(request, env)
     if (auth instanceof Response) {
       return auth
@@ -329,7 +334,12 @@ export function registerDrafts(
     if (early) {
       return early
     }
-    const draft = await requireVisibleDraft(env.DB, parsePositiveDraftId(rawId), discordId)
+    const draft = await requireVisibleDraft(
+      env.DB,
+      parsePositiveDraftId(rawId),
+      discordId,
+      getDraftSummary
+    )
     if (draft instanceof Response) {
       return draft
     }
@@ -338,6 +348,23 @@ export function registerDrafts(
       return allowed
     }
     return { session: auth.session, draft }
+  }
+
+  // Reads the entities of a draft that openDraft has already let the viewer open.
+  async function withEntities(
+    env: Env,
+    opened: { session: Session; draft: DraftSummary }
+  ): Promise<{ session: Session; draft: DraftRecord } | Response> {
+    const draft = await requireVisibleDraft(
+      env.DB,
+      opened.draft.id,
+      opened.session.discordId,
+      getDraft
+    )
+    if (draft instanceof Response) {
+      return draft
+    }
+    return { session: opened.session, draft }
   }
 
   app.get('/drafts/import', async (c) => {
@@ -367,7 +394,7 @@ export function registerDrafts(
     if (auth instanceof Response) {
       return auth
     }
-    const draft = await requireVisibleDraft(c.env.DB, id, auth.session.discordId, true)
+    const draft = await requireVisibleDraft(c.env.DB, id, auth.session.discordId, getDraft, true)
     if (draft instanceof Response) {
       return draft
     }
@@ -422,7 +449,11 @@ export function registerDrafts(
   })
 
   app.get('/api/v1/drafts/:id', async (c) => {
-    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'))
+    const access = await openDraft(c.req.raw, c.env, c.req.param('id'))
+    if (access instanceof Response) {
+      return access
+    }
+    const opened = await withEntities(c.env, access)
     if (opened instanceof Response) {
       return opened
     }
@@ -540,13 +571,17 @@ export function registerDrafts(
   app.get('/api/v1/drafts/:id/entities/:type/:key/audit', async (c) => {
     const type = parseEntityType(c.req.param('type'))
     const key = c.req.param('key')
-    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), {
+    const access = await openDraft(c.req.raw, c.env, c.req.param('id'), {
       precheck: () => (
         parsePositiveDraftId(c.req.param('id')) === null || !type || !key
           ? json({ error: 'That entity does not exist.', code: 'NOT_FOUND' }, 404)
           : null
       )
     })
+    if (access instanceof Response) {
+      return access
+    }
+    const opened = await withEntities(c.env, access)
     if (opened instanceof Response) {
       return opened
     }
@@ -722,7 +757,11 @@ export function registerDrafts(
   })
 
   app.get('/api/v1/drafts/:id/export.txt', async (c) => {
-    const opened = await openDraft(c.req.raw, c.env, c.req.param('id'), { admin: true })
+    const access = await openDraft(c.req.raw, c.env, c.req.param('id'), { admin: true })
+    if (access instanceof Response) {
+      return access
+    }
+    const opened = await withEntities(c.env, access)
     if (opened instanceof Response) {
       return opened
     }
