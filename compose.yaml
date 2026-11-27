@@ -1,3 +1,6 @@
+# One stack per project, so every worktree shares this container and its node_modules volume.
+name: krtacc
+
 services:
   app:
     build: .

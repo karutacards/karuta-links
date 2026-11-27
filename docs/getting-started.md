@@ -1,6 +1,6 @@
 # Getting started
 
-Last updated: November 20, 2026.
+Last updated: November 26, 2026.
 
 Linux or WSL plus Docker is the supported path. Host-global Node is not required when you use Compose. A local Node 22 plus Corepack pnpm install also works.
 
@@ -26,6 +26,8 @@ docker compose up --build
 ```
 
 The container applies the local D1 migrations, then serves the Worker on `http://127.0.0.1:8787`.
+
+`compose.yaml` names the stack `krtacc`, so every worktree and the dev container in `.devcontainer/` share one container and one `app_node_modules` volume. Compose fills that volume from the image only when it creates the volume, so a worktree whose dependencies differ still runs with the shared `node_modules` after a rebuild.
 
 ## Run on the host (WSL)
 
