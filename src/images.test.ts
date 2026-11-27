@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   characterImageUrl,
   contestImagePath,
   contestImageUrl,
+  ensureSnapshotImages,
   legacyContestImagePath,
   isContestObjectPath,
   keyedImagePath,
@@ -55,5 +56,78 @@ describe('keyed image paths', () => {
       'contests/card_hunt/1/ichika-nakano%3A4%3A12741',
       'contests/card_hunt/1/ichika-nakano:4:12741'
     ])
+  })
+})
+
+// An R2 stand-in that keeps each object's bytes as text.
+function fakeBucket(objects: Record<string, string>) {
+  const stored = new Map(Object.entries(objects))
+  const bucket = {
+    async head(key: string) {
+      return stored.has(key) ? {} : null
+    },
+    async put(key: string, value: ArrayBuffer) {
+      stored.set(key, new TextDecoder().decode(value))
+      return {}
+    }
+  } as unknown as R2Bucket
+  return { bucket, stored }
+}
+
+function stubOrigin(answer: () => Response | Promise<Response>) {
+  const calls: { url: string; signal: AbortSignal | null | undefined }[] = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    calls.push({ url, signal: init?.signal })
+    return answer()
+  })
+  return calls
+}
+
+const editionRows = [{ key: 'gojo-satoru', editions: [{ edition: '8', version: 1 }] }]
+
+const snapshot = (list: 'newEditions' | 'updatedEditions') => (
+  list === 'newEditions'
+    ? { newEditions: editionRows, updatedEditions: [] }
+    : { newEditions: [], updatedEditions: editionRows }
+)
+
+describe('ensureSnapshotImages', () => {
+  const objectKey = 'cards/versioned/gojo-satoru-8-1.jpg'
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('refetches a stored edition that the dump lists as updated', async () => {
+    const { bucket, stored } = fakeBucket({ [objectKey]: 'old art' })
+    const calls = stubOrigin(() => new Response('new art', { status: 200 }))
+    await ensureSnapshotImages(bucket, snapshot('updatedEditions'))
+    expect(calls.map((call) => call.url)).toEqual([originImageUrl('gojo-satoru', '8', 1)])
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal)
+    expect(stored.get(objectKey)).toBe('new art')
+  })
+
+  it('keeps the stored copy when the origin refuses or fails', async () => {
+    const { bucket, stored } = fakeBucket({ [objectKey]: 'old art' })
+    stubOrigin(() => new Response('denied', { status: 403 }))
+    await ensureSnapshotImages(bucket, snapshot('updatedEditions'))
+    expect(stored.get(objectKey)).toBe('old art')
+    stubOrigin(() => new Response('', { status: 200 }))
+    await ensureSnapshotImages(bucket, snapshot('updatedEditions'))
+    expect(stored.get(objectKey)).toBe('old art')
+    stubOrigin(() => Promise.reject(new DOMException('timed out', 'TimeoutError')))
+    await ensureSnapshotImages(bucket, snapshot('updatedEditions'))
+    expect(stored.get(objectKey)).toBe('old art')
+  })
+
+  it('leaves a stored new edition alone and copies a missing one', async () => {
+    const { bucket, stored } = fakeBucket({ [objectKey]: 'old art' })
+    const calls = stubOrigin(() => new Response('new art', { status: 200 }))
+    await ensureSnapshotImages(bucket, snapshot('newEditions'))
+    expect(calls).toEqual([])
+    expect(stored.get(objectKey)).toBe('old art')
+    const empty = fakeBucket({})
+    await ensureSnapshotImages(empty.bucket, snapshot('newEditions'))
+    expect(empty.stored.get(objectKey)).toBe('new art')
   })
 })

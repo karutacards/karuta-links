@@ -5,6 +5,9 @@ const ORIGIN_KEY = /^cards\/(?:versioned\/)?[^./][^/]*\.jpg$/
 const CHARACTER_PUBLIC = /^characters\/(?:versioned\/)?[^./][^/]*\.jpg$/
 const CONTEST_KEY = /^contests\/card\/[1-9][0-9]*\/(?:[1-9][0-9]*|ref)$/
 
+// karuta.today gives up on Karuta's origin host after the same 20 seconds.
+const ORIGIN_TIMEOUT_MS = 20_000
+
 function encodedName(key: string, edition: string, version: number, folder: 'cards' | 'characters'): string {
   const name = encodeURIComponent(key)
   if (version > 0) {
@@ -53,6 +56,35 @@ export function isContestObjectPath(path: string): boolean {
   return CONTEST_KEY.test(path) && !path.includes('..')
 }
 
+function fetchKeyedOrigin(key: string, edition: string, version: number): Promise<Response> {
+  return fetch(originImageUrl(key, edition, version), {
+    headers: { accept: 'image/jpeg' },
+    signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS)
+  })
+}
+
+async function putKeyedFull(bucket: R2Bucket, objectKey: string, bytes: ArrayBuffer): Promise<void> {
+  await bucket.put(objectKey, bytes, {
+    httpMetadata: {
+      contentType: 'image/jpeg',
+      cacheControl: 'public, max-age=31536000, immutable'
+    }
+  })
+}
+
+async function copyKeyedFull(
+  bucket: R2Bucket,
+  objectKey: string,
+  key: string,
+  edition: string,
+  version: number
+): Promise<boolean> {
+  const response = await fetchKeyedOrigin(key, edition, version)
+  if (!response.ok) return false
+  await putKeyedFull(bucket, objectKey, await response.arrayBuffer())
+  return true
+}
+
 export async function ensureKeyedFull(
   bucket: R2Bucket,
   key: string,
@@ -62,16 +94,36 @@ export async function ensureKeyedFull(
   const objectKey = keyedImagePath(key, edition, version)
   const existing = await bucket.head(objectKey)
   if (existing) return true
-  const response = await fetch(originImageUrl(key, edition, version), {
-    headers: { accept: 'image/jpeg' }
-  })
-  if (!response.ok) return false
-  await bucket.put(objectKey, await response.arrayBuffer(), {
-    httpMetadata: {
-      contentType: 'image/jpeg',
-      cacheControl: 'public, max-age=31536000, immutable'
+  return copyKeyedFull(bucket, objectKey, key, edition, version)
+}
+
+// Karuta sometimes replaces the art of an already published version in place, so the keyed
+// path stays the same and the stored copy goes stale. karuta.today refetches an object that
+// is older than the character's update. A dump always arrives after the stored object was
+// uploaded, so here that rule means refetching every stored edition the dump lists as
+// updated. The stored copy is overwritten only by a 200 answer with bytes, and kept when the
+// origin refuses, fails or times out.
+export async function refreshKeyedFull(
+  bucket: R2Bucket,
+  key: string,
+  edition: string,
+  version = 0
+): Promise<boolean> {
+  const objectKey = keyedImagePath(key, edition, version)
+  const existing = await bucket.head(objectKey)
+  if (!existing) {
+    return copyKeyedFull(bucket, objectKey, key, edition, version)
+  }
+  try {
+    const response = await fetchKeyedOrigin(key, edition, version)
+    if (response.status !== 200) return true
+    const bytes = await response.arrayBuffer()
+    if (bytes.byteLength > 0) {
+      await putKeyedFull(bucket, objectKey, bytes)
     }
-  })
+  } catch {
+    // Keep the stored copy.
+  }
   return true
 }
 
@@ -185,7 +237,10 @@ export async function serveKeyedImage(
   let object = await bucket.get(originKey)
   if (!object) {
     const origin = `${UNCACHED_CDN}/${originKey}`
-    const response = await fetch(origin, { headers: { accept: 'image/jpeg' } })
+    const response = await fetch(origin, {
+      headers: { accept: 'image/jpeg' },
+      signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS)
+    })
     if (!response.ok) {
       return new Response('Not found', { status: 404 })
     }
@@ -216,13 +271,21 @@ export async function ensureSnapshotImages(
     updatedEditions: { key: string; editions: { edition: string; version: number }[] }[]
   }
 ): Promise<void> {
-  const rows = [...snapshot.newEditions, ...snapshot.updatedEditions]
-  for (const row of rows) {
-    for (const edition of row.editions) {
-      try {
-        await ensureKeyedFull(bucket, row.key, edition.edition, edition.version)
-      } catch {
-        // Dump HTML still renders; GET /images will retry the origin.
+  // Browsers keep art they already cached at an unchanged URL for a year, because the
+  // image route marks it immutable and the dump's stored image URLs carry no version. That
+  // limit is accepted: in-place replacements are rare, and new viewers see the new art.
+  const passes = [
+    { rows: snapshot.newEditions, copy: ensureKeyedFull },
+    { rows: snapshot.updatedEditions, copy: refreshKeyedFull }
+  ]
+  for (const { rows, copy } of passes) {
+    for (const row of rows) {
+      for (const edition of row.editions) {
+        try {
+          await copy(bucket, row.key, edition.edition, edition.version)
+        } catch {
+          // Dump HTML still renders; GET /images will retry the origin.
+        }
       }
     }
   }

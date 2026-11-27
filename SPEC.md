@@ -71,7 +71,7 @@ A dump is an immutable snapshot. Ingest stores same-origin image URLs. Those pat
 
 Those are unframed character edition images. Framed Card Hunt tiles use `/images/contests/…`. A request to `/images/cards/…` 301s to the matching `/images/characters/…` path.
 
-Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. Character-art objects stay at Karuta's `cards/…` keys in R2 and on the uncached host `d29rfjkp84y49u.cloudfront.net`. A miss fetches that origin and stores the full JPEG. The Worker does not build thumbs.
+Keys are URI-encoded the same way karuta.today encodes CloudFront paths. The Worker serves `/images/…` from private R2 `karuta-images`. Character-art objects stay at Karuta's `cards/…` keys in R2 and on the uncached host `d29rfjkp84y49u.cloudfront.net`. A miss fetches that origin and stores the full JPEG. After a content dump, the Worker refetches each stored edition the dump lists under updated editions, because Karuta sometimes replaces art in place at the same path. It overwrites the stored copy only with a successful answer and keeps it when the origin fails. Origin fetches give up after 20 seconds. Browsers that already cached the old art keep it, because image URLs carry no version. The Worker does not build thumbs.
 
 Public HTML shows names, series, new aliases, editions and images. It does not show groups. It does not scrape live production data. The page description is the same count line as the home listing. The published time and short URL sit on separate lines. Short URLs display as `krta.cc/{slug}`.
 
